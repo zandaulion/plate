@@ -8,7 +8,8 @@ import {
   totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
   addManualItem, hasPhotoItems, markWeighed, portionSourceOf
 } from '/core/analysis/estimate.js';
-import { toItem } from '/core/foods.js';
+import { toItem, isPlausible } from '/core/foods.js';
+import { macroAgreement } from '/core/nutrition.js';
 import { localDayKey } from '/core/day.js';
 import { smoothSeries } from '/core/weight.js';
 
@@ -774,6 +775,124 @@ $('food-results').addEventListener('click', (ev) => {
   const results = JSON.parse($('food-results').dataset.payload || '[]');
   const food = results[Number(btn.dataset.i)];
   if (food) addFood(food);
+});
+
+// ---------------------------------------------------------- typed panel
+
+let manualBasis = 'portion';
+
+$('manual-toggle').addEventListener('click', () => {
+  const form = $('manual-form');
+  form.hidden = !form.hidden;
+  $('manual-toggle').setAttribute('aria-expanded', String(!form.hidden));
+  if (!form.hidden) {
+    // Carry over whatever was being searched for, so switching to typing it
+    // in does not mean retyping the name.
+    if (!$('m-name').value) $('m-name').value = $('food-q').value.trim();
+    $('m-name').focus();
+  }
+});
+
+$('m-basis').addEventListener('click', (ev) => {
+  const basis = ev.target.closest('[data-basis]')?.dataset.basis;
+  if (!basis) return;
+  manualBasis = basis;
+  document.querySelectorAll('#m-basis [data-basis]').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.basis === basis));
+  });
+  checkManual();
+});
+
+const manualNumber = (id) => {
+  const raw = String($(id).value).replace(',', '.').trim();
+  if (!raw) return null;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : null;
+};
+
+/** The typed figures reduced to per-100g, or null when incomplete. */
+function readManual() {
+  const grams = manualNumber('m-grams');
+  const kcal = manualNumber('m-kcal');
+  if (!grams || grams <= 0 || kcal === null) return null;
+
+  const scale = manualBasis === 'per100' ? 1 : 100 / grams;
+  const per100 = {
+    calories: kcal * scale,
+    protein: (manualNumber('m-protein') ?? 0) * scale,
+    fat: (manualNumber('m-fat') ?? 0) * scale,
+    carbs: (manualNumber('m-carbs') ?? 0) * scale
+  };
+  return { name: $('m-name').value.trim(), grams, per100 };
+}
+
+/**
+ * Warns when typed figures do not hold together.
+ *
+ * Printed panels are wrong more often than people expect: a restaurant menu
+ * that prompted this feature stated 940 kcal for macros that add to 807, a
+ * 14% contradiction. The app cannot tell which number is wrong, but it can say
+ * that one of them is.
+ */
+function checkManual() {
+  const parsed = readManual();
+  const warn = $('manual-warn');
+  if (!parsed) { warn.hidden = true; return null; }
+
+  if (!isPlausible(parsed.per100)) {
+    warn.textContent = 'Those numbers are not physically possible for 100 g of food — check '
+      + 'whether they are per portion or per 100 g.';
+    warn.hidden = false;
+    return null;
+  }
+
+  const disagreement = macroAgreement({
+    calories: parsed.per100.calories,
+    protein: parsed.per100.protein,
+    fat: parsed.per100.fat,
+    carbs: parsed.per100.carbs
+  });
+
+  // 10%, not 15%. The menu that prompted this feature was out by 14.1% and
+  // slipped under a 15% threshold. Some slack is still needed: fibre counts
+  // as carbohydrate on EU labels but yields about 2 kcal/g rather than 4, and
+  // panels are rounded, so small gaps are normal and not worth a warning.
+  if (disagreement !== null && disagreement > 0.10) {
+    const implied = Math.round(
+      (parsed.per100.protein * 4 + parsed.per100.carbs * 4 + parsed.per100.fat * 9)
+      * parsed.grams / 100);
+    warn.textContent = `The macros add up to about ${implied} kcal, not `
+      + `${Math.round(parsed.per100.calories * parsed.grams / 100)}. Printed panels are often out — `
+      + 'worth a second look. The calories you entered are what will be used.';
+    warn.hidden = false;
+  } else {
+    warn.hidden = true;
+  }
+  return parsed;
+}
+
+for (const id of ['m-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs']) {
+  $(id).addEventListener('input', checkManual);
+}
+
+$('m-add').addEventListener('click', () => {
+  const parsed = checkManual();
+  if (!parsed) return toast('Enter at least a weight and the calories.');
+  if (!parsed.name) return toast('Give it a name.');
+
+  // source stays 'manual', so no photo-error band is applied to it.
+  state.estimate = addManualItem(
+    state.estimate || { items: [], portionSource: 'model', note: '' }, parsed);
+
+  for (const id of ['m-name', 'm-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs']) $(id).value = '';
+  $('manual-warn').hidden = true;
+  $('manual-form').hidden = true;
+  $('manual-toggle').setAttribute('aria-expanded', 'false');
+  $('food-q').value = '';
+  $('food-results').innerHTML = '';
+
+  renderReview();
+  toast(`Added ${parsed.name}`);
 });
 
 async function lookupBarcode(code) {

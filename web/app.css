@@ -485,3 +485,26 @@ input[type="range"]::-moz-range-thumb {
 .exp dt { color: var(--ink-3); }
 .exp dd { margin: 0; font-variant-numeric: tabular-nums; }
 .exp .progress { margin: 10px 0 0; font-size: .84rem; color: var(--ink-2); }
+
+
+/* ---------------------------------------------------------- manual entry */
+
+.link-btn {
+  background: none; border: 0; padding: 10px 0; color: var(--accent);
+  font-size: .88rem; font-weight: 600; text-decoration: underline;
+}
+.manual {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px; margin-top: 4px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.manual-basis { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.manual-basis label { flex: 0 0 130px; display: flex; flex-direction: column; gap: 6px;
+  font-size: .82rem; font-weight: 600; color: var(--ink-2); }
+.manual-basis .chips { flex: 1; }
+.manual-basis .chip { padding: 8px 12px; font-size: .82rem; }
+
+.manual-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.manual-grid label { display: flex; flex-direction: column; gap: 5px;
+  font-size: .82rem; font-weight: 600; color: var(--ink-2); }
+.warn-text { color: var(--warn); }

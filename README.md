@@ -267,6 +267,24 @@ rather than a moving average because the fit is what the expenditure figure was
 computed from; drawing a different smoother would put a line on screen that
 disagrees with the number beside it.
 
+## Typing in a printed panel
+
+When a menu or a label states the numbers, they can be typed in directly,
+either for the stated portion or per 100 g. Such an item is treated as exact:
+no photo-error band is applied to it.
+
+Two checks run as the figures are entered, because printed panels are wrong
+more often than people expect. Anything physically impossible is refused
+outright — over ~950 kcal per 100 g, or macros that cannot fit in 100 g. And
+when the stated calories disagree with the macros by more than 10%, it says so:
+the restaurant menu that prompted this feature listed 940 kcal against macros
+adding to 807, a 14% contradiction. The app cannot tell which figure is wrong,
+so it uses the stated calories and points out that one of them is off.
+
+The threshold has slack for a reason: fibre counts as carbohydrate on EU labels
+but yields about 2 kcal/g rather than 4, and panels are rounded, so small gaps
+are normal.
+
 ## Export
 
 Three shapes, all free, all complete, none gated:

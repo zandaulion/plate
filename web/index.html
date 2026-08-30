@@ -126,6 +126,37 @@
           </div>
           <p id="finder-hint" class="hint"></p>
           <ul id="food-results" class="results"></ul>
+
+          <button id="manual-toggle" class="link-btn" type="button" aria-expanded="false">
+            Type in the numbers instead
+          </button>
+
+          <div id="manual-form" class="manual" hidden>
+            <p class="hint">For when a menu or a label states them. Everything here is taken as
+              exact — no photo estimate is applied.</p>
+
+            <label class="sr-only" for="m-name">Food name</label>
+            <input id="m-name" type="text" placeholder="What was it?" autocomplete="off">
+
+            <div class="manual-basis">
+              <label for="m-grams">Amount<span class="unit-tag">grams</span>
+                <input id="m-grams" type="number" inputmode="decimal" min="1" max="5000" step="1"></label>
+              <div class="chips" id="m-basis">
+                <button class="chip" type="button" data-basis="portion" aria-pressed="true">for this amount</button>
+                <button class="chip" type="button" data-basis="per100" aria-pressed="false">per 100 g</button>
+              </div>
+            </div>
+
+            <div class="manual-grid">
+              <label for="m-kcal">kcal<input id="m-kcal" type="number" inputmode="decimal" min="0" step="1"></label>
+              <label for="m-protein">Protein<input id="m-protein" type="number" inputmode="decimal" min="0" step="0.1"></label>
+              <label for="m-fat">Fat<input id="m-fat" type="number" inputmode="decimal" min="0" step="0.1"></label>
+              <label for="m-carbs">Carbs<input id="m-carbs" type="number" inputmode="decimal" min="0" step="0.1"></label>
+            </div>
+
+            <p id="manual-warn" class="hint warn-text" hidden></p>
+            <button id="m-add" class="secondary" type="button">Add it</button>
+          </div>
         </section>
 
         <fieldset class="meals">
