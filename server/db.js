@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,16 @@ db.exec('PRAGMA synchronous = NORMAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
 db.exec(`
+  -- A person. Deliberately holds no name, email, phone or password: identity
+  -- is the random id and nothing else, and recovery_hash is a hash of a code
+  -- the user keeps. Nothing here identifies anyone off this server.
+  CREATE TABLE IF NOT EXISTS accounts (
+    id              TEXT PRIMARY KEY,
+    created_at      TEXT NOT NULL,
+    recovery_hash   TEXT,
+    recovery_set_at TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS devices (
     id          TEXT PRIMARY KEY,
     token_hash  TEXT NOT NULL UNIQUE,
@@ -47,6 +58,11 @@ db.exec(`
     updated_at  TEXT NOT NULL
   );
 
+  -- NOTE: this is the v1 shape. migrateToAccounts() below rewrites entries and
+  -- profiles onto account_id and relaxes the device foreign key -- including on
+  -- a fresh database, which is where the definitions actually take effect. Read
+  -- that function, not this block, for the live schema.
+  --
   -- The "day" column is the logging device's local calendar date, supplied by the client.
   -- Deriving it here from created_at would misfile late dinners for anyone
   -- outside UTC.
@@ -67,6 +83,110 @@ db.exec(`
 `);
 
 /**
+ * Moves history from devices to accounts.
+ *
+ * The first version made the device the identity: entries and the profile hung
+ * off device_id, so a second device was a second person, and losing the cookie
+ * lost everything with no way back. This introduces an account above the
+ * device and repoints the data at it.
+ *
+ * Idempotent, and safe on a populated database: each existing device becomes
+ * its own account, which is the only mapping the data supports -- nothing
+ * records that two devices were ever the same person, which is precisely why
+ * this could not be deferred.
+ */
+function migrateToAccounts() {
+  const deviceCols = db.prepare('PRAGMA table_info(devices)').all().map((c) => c.name);
+  if (deviceCols.includes('account_id')) return false;
+
+  // Foreign key enforcement has to be off around a table rebuild, and the
+  // pragma is a no-op inside a transaction, so it is set before BEGIN.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec('ALTER TABLE devices ADD COLUMN account_id TEXT REFERENCES accounts(id)');
+
+    const now = new Date().toISOString();
+    const accountOf = new Map();
+    for (const device of db.prepare('SELECT id FROM devices').all()) {
+      const accountId = crypto.randomUUID();
+      db.prepare('INSERT INTO accounts (id, created_at) VALUES (?, ?)').run(accountId, now);
+      db.prepare('UPDATE devices SET account_id = ? WHERE id = ?').run(accountId, device.id);
+      accountOf.set(device.id, accountId);
+    }
+
+    // entries is rebuilt rather than extended, for two reasons. account_id has
+    // to be NOT NULL and SQLite cannot add a NOT NULL column to an existing
+    // table; and device_id carried ON DELETE CASCADE, which would have made
+    // revoking a lost phone delete its history -- the exact thing accounts
+    // exist to prevent. It becomes a nullable provenance field that survives
+    // its device.
+    db.exec(`
+      CREATE TABLE entries_new (
+        id                TEXT PRIMARY KEY,
+        account_id        TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        device_id         TEXT REFERENCES devices(id) ON DELETE SET NULL,
+        day               TEXT NOT NULL,
+        meal              TEXT,
+        created_at        TEXT NOT NULL,
+        photo_id          TEXT,
+        note              TEXT,
+        portion_confirmed INTEGER NOT NULL DEFAULT 0,
+        portion_source    TEXT,
+        items_json        TEXT NOT NULL,
+        totals_json       TEXT NOT NULL
+      );
+    `);
+
+    for (const row of db.prepare('SELECT * FROM entries').all()) {
+      const accountId = accountOf.get(row.device_id);
+      if (!accountId) continue; // orphaned row; nothing can own it
+      db.prepare(`
+        INSERT INTO entries_new (id, account_id, device_id, day, meal, created_at, photo_id,
+                                 note, portion_confirmed, portion_source, items_json, totals_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(row.id, accountId, row.device_id, row.day, row.meal, row.created_at, row.photo_id,
+        row.note, row.portion_confirmed, row.portion_source ?? null, row.items_json, row.totals_json);
+    }
+
+    db.exec('DROP TABLE entries');
+    db.exec('ALTER TABLE entries_new RENAME TO entries');
+
+    // profiles was keyed by device_id, and SQLite cannot repoint a primary key
+    // in place. One row per device becomes one row per account, which is
+    // one-to-one at this point by construction.
+    db.exec(`
+      CREATE TABLE profiles_new (
+        account_id  TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        weight_kg   REAL,
+        height_cm   REAL,
+        age_years   INTEGER,
+        sex         TEXT,
+        activity    TEXT,
+        updated_at  TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO profiles_new
+        SELECT d.account_id, p.weight_kg, p.height_cm, p.age_years, p.sex, p.activity, p.updated_at
+        FROM profiles p JOIN devices d ON d.id = p.device_id;
+      DROP TABLE profiles;
+      ALTER TABLE profiles_new RENAME TO profiles;
+    `);
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_entries_account_day ON entries(account_id, day)');
+    db.exec('COMMIT');
+    console.log('migrated device-scoped data onto accounts');
+    return true;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+    const bad = db.prepare('PRAGMA foreign_key_check').all();
+    if (bad.length) throw new Error(`account migration left ${bad.length} broken references`);
+  }
+}
+
+/**
  * Adds a column that a later version introduced, if it is missing.
  * SQLite has no IF NOT EXISTS for ADD COLUMN, and an unconditional ALTER
  * would abort startup on every restart after the first.
@@ -81,5 +201,20 @@ export function addColumnIfMissing(table, column, decl) {
 // Added after the follow-up measurement showed that *how* a weight was
 // arrived at changes its accuracy band, which a boolean cannot express.
 addColumnIfMissing('entries', 'portion_source', 'TEXT');
+
+migrateToAccounts();
+
+db.exec(`
+  -- Short-lived codes that add a second device to an existing account. Minted
+  -- only from a device already signed in, so possession of a working device is
+  -- the authority for adding another.
+  CREATE TABLE IF NOT EXISTS device_links (
+    code_hash   TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    used_at     TEXT
+  );
+`);
 
 export const nowIso = () => new Date().toISOString();

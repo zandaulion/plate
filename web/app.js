@@ -129,19 +129,71 @@ function showGate() {
   $('gate').hidden = false;
 }
 
+/**
+ * Three ways in, because a device token is the only credential and it can be
+ * lost: a fresh invite, a code from another signed-in device, or the recovery
+ * code written down at signup.
+ */
+const GATE_MODES = {
+  invite: {
+    path: '/api/auth/redeem', label: 'Invite code',
+    placeholder: 'ABCDE-FGHJK', hint: 'The code you were sent.'
+  },
+  link: {
+    path: '/api/auth/link', label: 'Link code',
+    placeholder: 'ABCDE-FGH',
+    hint: 'Open Plate on a device you are already signed in on, and add this one from there.'
+  },
+  recover: {
+    path: '/api/auth/recover', label: 'Recovery code',
+    placeholder: 'ABCDE-FGHJKLM',
+    hint: 'The code you saved when you first signed in.'
+  }
+};
+
+let gateMode = 'invite';
+
+function setGateMode(mode) {
+  gateMode = mode;
+  const m = GATE_MODES[mode];
+  $('gate-label').textContent = m.label;
+  $('invite').placeholder = m.placeholder;
+  $('invite').value = '';
+  $('gate-hint').textContent = m.hint;
+  $('gate-error').hidden = true;
+  document.querySelectorAll('[data-gate]').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.gate === mode));
+  });
+}
+
+document.querySelector('.gate-modes').addEventListener('click', (ev) => {
+  const mode = ev.target.closest('[data-gate]')?.dataset.gate;
+  if (mode) setGateMode(mode);
+});
+
 $('redeem-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const err = $('gate-error');
   err.hidden = true;
 
   try {
-    await api('/api/auth/redeem', {
+    const body = await api(GATE_MODES[gateMode].path, {
       method: 'POST',
       body: JSON.stringify({ code: $('invite').value.trim() })
     });
     $('gate').hidden = true;
     $('app').hidden = false;
     await start();
+    // Shown once and never again, so it is put in front of the user
+    // immediately rather than left for them to discover in settings.
+    if (body?.recoveryCode) {
+      fillProfile();
+      $('profile').hidden = false;
+      openScreen('profile', () => { $('profile').hidden = true; });
+      showCode('Save this recovery code', body.recoveryCode,
+        'It is the only way back into your log if you lose this device. '
+        + 'It is stored hashed and cannot be shown again.', true);
+    }
   } catch (e) {
     err.textContent = e.message;
     err.hidden = false;
@@ -882,6 +934,9 @@ const closeProfile = () => dismissScreen('profile');
 
 $('open-profile').addEventListener('click', () => {
   fillProfile();
+  loadDevices();
+  renderRecoveryState();
+  $('code-box').hidden = true;
   $('profile').hidden = false;
   openScreen('profile', () => { $('profile').hidden = true; });
 });
@@ -917,8 +972,94 @@ $('profile-form').addEventListener('submit', async (ev) => {
   }
 });
 
+// ---------------------------------------------------------------- devices
+
+function showCode(title, code, hint, warn = false) {
+  $('code-title').textContent = title;
+  $('code-value').textContent = code;
+  $('code-hint').textContent = hint;
+  $('code-box').classList.toggle('warn', warn);
+  $('code-box').hidden = false;
+  $('code-box').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function relativeTime(iso) {
+  if (!iso) return 'never';
+  const mins = (Date.now() - Date.parse(iso)) / 60000;
+  if (!Number.isFinite(mins)) return 'unknown';
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${Math.round(mins)} min ago`;
+  if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`;
+  return `${Math.round(mins / 1440)} d ago`;
+}
+
+async function loadDevices() {
+  try {
+    const { devices } = await api('/api/devices');
+    $('device-list').innerHTML = devices.map((d) => `
+      <li class="device" data-id="${esc(d.id)}">
+        <span class="device-name">${esc(d.label || 'Unnamed device')}${
+          d.current ? '<span class="device-this">this one</span>' : ''}</span>
+        <span class="device-meta">last used ${esc(relativeTime(d.lastSeen))}</span>
+        ${d.current ? '<span></span>'
+          : `<button class="device-revoke" type="button" data-revoke="${esc(d.id)}">Remove</button>`}
+      </li>`).join('');
+  } catch {
+    $('device-list').innerHTML = '';
+  }
+}
+
+function renderRecoveryState() {
+  const has = state.me?.hasRecoveryCode;
+  $('recovery-state').textContent = has
+    ? 'A recovery code is set. Replacing it retires the old one.'
+    : 'No recovery code yet — if you lose this device, your log cannot be reached.';
+  $('recovery-state').style.color = has ? '' : 'var(--warn)';
+  $('recovery-btn').textContent = has ? 'Replace recovery code' : 'Create a recovery code';
+}
+
+$('link-device').addEventListener('click', async () => {
+  try {
+    const { code, expiresInMs } = await api('/api/devices/link-code', { method: 'POST', body: '{}' });
+    showCode('Enter this on the other device',
+      code,
+      `Open Plate there, choose "Link a device", and type this in. It expires in `
+      + `${Math.round(expiresInMs / 60000)} minutes and works once.`);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('recovery-btn').addEventListener('click', async () => {
+  if (state.me?.hasRecoveryCode
+      && !confirm('Replace the recovery code? The old one stops working immediately.')) return;
+  try {
+    const { recoveryCode } = await api('/api/devices/recovery-code', { method: 'POST', body: '{}' });
+    state.me.hasRecoveryCode = true;
+    renderRecoveryState();
+    showCode('Save this recovery code', recoveryCode,
+      'It is the only way back into your log if you lose every device. '
+      + 'It is stored hashed and cannot be shown again.', true);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('device-list').addEventListener('click', async (ev) => {
+  const id = ev.target.closest('[data-revoke]')?.dataset.revoke;
+  if (!id) return;
+  if (!confirm('Remove this device? Its access ends immediately. Your log is not affected.')) return;
+  try {
+    await api(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    toast('Device removed');
+    loadDevices();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 $('logout').addEventListener('click', async () => {
-  if (!confirm('Sign this device out? Your entries stay on the server.')) return;
+  if (!confirm('Sign this device out? Your log stays on the server — you can get back in with a link code from another device, or your recovery code.')) return;
   await fetch('/api/auth/logout', { method: 'POST' });
   location.reload();
 });

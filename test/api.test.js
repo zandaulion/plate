@@ -314,3 +314,196 @@ test('editing can upgrade an entry to weighed', async () => {
   const day = await (await api('/api/entries?day=2026-08-19', { headers: auth })).json();
   assert.equal(day.entries[0].portionSource, 'weighed');
 });
+
+// ------------------------------------------------------- accounts & devices
+
+async function linkNewDevice(auth, label = 'second') {
+  const { code } = await (await api('/api/devices/link-code', { method: 'POST', headers: auth, body: '{}' })).json();
+  const res = await api('/api/auth/link', { method: 'POST', body: JSON.stringify({ code, label }) });
+  assert.equal(res.status, 200, 'link code should be accepted');
+  const cookie = res.headers.get('set-cookie').split(';')[0];
+  return { cookie, auth: { Cookie: cookie }, body: await res.json() };
+}
+
+test('redeeming an invite returns a recovery code exactly once', async () => {
+  const code = createInvite();
+  const body = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
+  assert.ok(body.recoveryCode, 'the recovery code is only ever shown here');
+  assert.ok(body.accountId);
+  assert.ok(body.deviceId);
+});
+
+test('a linked device shares the same account, history and profile', async () => {
+  const first = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: first.auth,
+    body: JSON.stringify({ weightKg: 75, heightCm: 175, ageYears: 35, sex: 'female', activity: 'light' })
+  });
+  await api('/api/entries', {
+    method: 'POST', headers: first.auth,
+    body: JSON.stringify({
+      day: '2026-08-18', meal: 'lunch',
+      items: [{ name: 'soup', grams: 300, per: { calories: 0.4, protein: 0.02, fat: 0.01, carbs: 0.05 } }]
+    })
+  });
+
+  const second = await linkNewDevice(first.auth, 'tablet');
+
+  const mine = await (await api('/api/me', { headers: first.auth })).json();
+  const theirs = await (await api('/api/me', { headers: second.auth })).json();
+  assert.equal(mine.accountId, theirs.accountId, 'both devices are one account');
+  assert.notEqual(mine.deviceId, theirs.deviceId, 'but they are still distinct devices');
+  assert.equal(theirs.profile.weightKg, 75, 'the profile is shared, not re-entered');
+
+  const day = await (await api('/api/entries?day=2026-08-18', { headers: second.auth })).json();
+  assert.equal(day.entries.length, 1, 'the second device sees the first one’s log');
+
+  // And writes land in the same history.
+  await api('/api/entries', {
+    method: 'POST', headers: second.auth,
+    body: JSON.stringify({
+      day: '2026-08-18',
+      items: [{ name: 'apple', grams: 150, per: { calories: 0.52, protein: 0, fat: 0, carbs: 0.14 } }]
+    })
+  });
+  const after = await (await api('/api/entries?day=2026-08-18', { headers: first.auth })).json();
+  assert.equal(after.entries.length, 2, 'the first device sees what the second wrote');
+});
+
+test('a link code works once and then not again', async () => {
+  const { auth } = await registerDevice();
+  const { code } = await (await api('/api/devices/link-code', { method: 'POST', headers: auth, body: '{}' })).json();
+
+  assert.equal((await api('/api/auth/link', { method: 'POST', body: JSON.stringify({ code }) })).status, 200);
+  assert.equal((await api('/api/auth/link', { method: 'POST', body: JSON.stringify({ code }) })).status, 400);
+});
+
+test('an unknown link code is refused', async () => {
+  assert.equal((await api('/api/auth/link', { method: 'POST', body: JSON.stringify({ code: 'ZZZZZ-ZZZ' }) })).status, 400);
+});
+
+test('devices are listed per account, with the current one marked', async () => {
+  const first = await registerDevice();
+  await linkNewDevice(first.auth, 'tablet');
+
+  const { devices } = await (await api('/api/devices', { headers: first.auth })).json();
+  assert.equal(devices.length, 2);
+  assert.equal(devices.filter((d) => d.current).length, 1, 'exactly one device is the caller');
+  assert.ok(devices.some((d) => d.label === 'tablet'));
+});
+
+test('revoking a device removes its access but keeps the history', async () => {
+  const first = await registerDevice();
+  await api('/api/entries', {
+    method: 'POST', headers: first.auth,
+    body: JSON.stringify({
+      day: '2026-08-17',
+      items: [{ name: 'bread', grams: 80, per: { calories: 2.6, protein: 0.09, fat: 0.03, carbs: 0.49 } }]
+    })
+  });
+  const second = await linkNewDevice(first.auth, 'lost phone');
+
+  const { devices } = await (await api('/api/devices', { headers: first.auth })).json();
+  const lost = devices.find((d) => d.label === 'lost phone');
+  assert.equal((await api(`/api/devices/${lost.id}`, { method: 'DELETE', headers: first.auth })).status, 200);
+
+  // The revoked device is locked out...
+  assert.equal((await api('/api/me', { headers: second.auth })).status, 401);
+  // ...and the log it could see is untouched.
+  const day = await (await api('/api/entries?day=2026-08-17', { headers: first.auth })).json();
+  assert.equal(day.entries.length, 1, 'revoking a device must never delete history');
+});
+
+test('a device cannot revoke itself', async () => {
+  const { auth } = await registerDevice();
+  const { devices } = await (await api('/api/devices', { headers: auth })).json();
+  const me = devices.find((d) => d.current);
+
+  const res = await api(`/api/devices/${me.id}`, { method: 'DELETE', headers: auth });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'cannot_revoke_self');
+});
+
+test('a device cannot revoke one belonging to someone else', async () => {
+  const a = await registerDevice();
+  const b = await registerDevice();
+  const { devices } = await (await api('/api/devices', { headers: b.auth })).json();
+
+  assert.equal((await api(`/api/devices/${devices[0].id}`, { method: 'DELETE', headers: a.auth })).status, 404);
+  assert.equal((await api('/api/me', { headers: b.auth })).status, 200, 'their device still works');
+});
+
+test('the recovery code restores access to the same account', async () => {
+  const code = createInvite();
+  const redeemed = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
+  const original = { Cookie: `plate_token=x` }; // deliberately unusable: the phone is gone
+
+  const res = await api('/api/auth/recover', {
+    method: 'POST', body: JSON.stringify({ code: redeemed.recoveryCode, label: 'new phone' })
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.accountId, redeemed.accountId, 'recovery must land on the original account');
+  assert.notEqual(body.deviceId, redeemed.deviceId, 'as a new device');
+  assert.equal((await api('/api/me', { headers: original })).status, 401);
+});
+
+test('a reissued recovery code retires the old one', async () => {
+  const code = createInvite();
+  const redeemed = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
+  // Reissue from the signed-in device.
+  const auth = { Cookie: (await (async () => {
+    const r = await api('/api/auth/recover', { method: 'POST', body: JSON.stringify({ code: redeemed.recoveryCode }) });
+    return r.headers.get('set-cookie').split(';')[0];
+  })()) };
+
+  const { recoveryCode: fresh } = await (await api('/api/devices/recovery-code', { method: 'POST', headers: auth, body: '{}' })).json();
+  assert.notEqual(fresh, redeemed.recoveryCode);
+
+  assert.equal((await api('/api/auth/recover', { method: 'POST', body: JSON.stringify({ code: redeemed.recoveryCode }) })).status, 400,
+    'the superseded code must stop working');
+  assert.equal((await api('/api/auth/recover', { method: 'POST', body: JSON.stringify({ code: fresh }) })).status, 200);
+});
+
+test('an unknown recovery code is refused', async () => {
+  assert.equal((await api('/api/auth/recover', { method: 'POST', body: JSON.stringify({ code: 'AAAAA-AAAAAAA' }) })).status, 400);
+});
+
+test('deleting an account removes its devices, entries and profile', async () => {
+  const { db } = await import('../server/db.js');
+  const first = await registerDevice();
+  await linkNewDevice(first.auth, 'second');
+  await api('/api/profile', {
+    method: 'PUT', headers: first.auth,
+    body: JSON.stringify({ weightKg: 70, heightCm: 170, ageYears: 30, sex: 'male', activity: 'light' })
+  });
+  await api('/api/entries', {
+    method: 'POST', headers: first.auth,
+    body: JSON.stringify({
+      day: '2026-08-15',
+      items: [{ name: 'x', grams: 100, per: { calories: 1, protein: 0, fat: 0, carbs: 0 } }]
+    })
+  });
+
+  const { accountId } = await (await api('/api/me', { headers: first.auth })).json();
+
+  // Devices reference the account with no ON DELETE action, so this used to
+  // fail the foreign key and return 500.
+  const res = await api(`/api/admin/accounts/${accountId}`, {
+    method: 'DELETE', headers: { 'X-Admin': '1' }
+  });
+  assert.equal(res.status, 200);
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM devices WHERE account_id = ?').get(accountId).n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM entries WHERE account_id = ?').get(accountId).n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM profiles WHERE account_id = ?').get(accountId).n, 0);
+  assert.equal((await api('/api/me', { headers: first.auth })).status, 401, 'its devices are locked out');
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), [], 'no dangling references');
+});
+
+test('deleting an unknown account is a 404, not a 500', async () => {
+  const res = await api('/api/admin/accounts/does-not-exist', {
+    method: 'DELETE', headers: { 'X-Admin': '1' }
+  });
+  assert.equal(res.status, 404);
+});

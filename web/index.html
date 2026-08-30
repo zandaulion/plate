@@ -16,10 +16,17 @@
   <div class="gate-inner">
     <h1 class="brand">Plate</h1>
     <p class="gate-lead">Photograph a meal, correct the portion, log it.</p>
+    <div class="chips gate-modes" role="tablist">
+      <button class="chip" type="button" data-gate="invite" aria-pressed="true">Invite</button>
+      <button class="chip" type="button" data-gate="link" aria-pressed="false">Link a device</button>
+      <button class="chip" type="button" data-gate="recover" aria-pressed="false">Recovery code</button>
+    </div>
+
     <form id="redeem-form" class="stack">
-      <label for="invite">Invite code</label>
+      <label for="invite" id="gate-label">Invite code</label>
       <input id="invite" name="invite" autocomplete="one-time-code" spellcheck="false"
              placeholder="ABCDE-FGHJK" required>
+      <p class="hint" id="gate-hint">The code you were sent.</p>
       <button class="primary" type="submit">Continue</button>
       <p id="gate-error" class="error" role="alert" hidden></p>
     </form>
@@ -142,6 +149,7 @@
         <button id="profile-close" class="icon-btn" aria-label="Close">&times;</button>
       </header>
 
+      <div id="profile-body">
       <form id="profile-form" class="stack">
         <p class="hint">Used only to estimate what you burn on an average day. It stays on this
           server and is never sent anywhere else.</p>
@@ -171,6 +179,23 @@
         <button class="primary" type="submit">Save</button>
         <p id="profile-error" class="error" role="alert" hidden></p>
       </form>
+
+      <section class="devices-block">
+        <h3 class="section-head">Your devices</h3>
+        <ul id="device-list" class="devices"></ul>
+        <button id="link-device" class="secondary" type="button">Add another device</button>
+
+        <div id="code-box" class="code-box" hidden>
+          <p class="code-label" id="code-title"></p>
+          <output class="code-value" id="code-value"></output>
+          <p class="hint" id="code-hint"></p>
+        </div>
+
+        <h3 class="section-head">Recovery</h3>
+        <p class="hint" id="recovery-state"></p>
+        <button id="recovery-btn" class="secondary" type="button">Create a recovery code</button>
+      </section>
+      </div>
 
       <footer class="sheet-foot muted-foot">
         <button id="logout" class="text-btn" type="button">Sign this device out</button>

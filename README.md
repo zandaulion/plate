@@ -103,12 +103,38 @@ Configuration, all via environment:
 | `DATA_DIR` | SQLite database and photo files |
 | `PORT`, `BIND_HOST` | `BIND_HOST` stays on loopback unless set; the container sets it explicitly |
 
-## Access
+## Accounts, devices and getting back in
 
-Invite-only. Codes are minted through `/api/admin/*`, which is reachable only
-on the private listener that injects `X-Admin`; the public listener answers 404
-for those paths before the request reaches the app. Invite codes and device
-tokens are stored as SHA-256 hashes, so the database holds no reusable secret.
+A person is an **account**; a phone or tablet is a **device**. History and the
+profile belong to the account, so every device signed into it sees one log.
+The first version made the device the identity, which meant a second install
+was a second person and a cleared cookie was an unreachable history.
+
+An account holds no name, email, phone or password. Identity is a random id
+and nothing else.
+
+Three ways in, because a device token is the only credential and it can be lost:
+
+* **Invite code** — creates a new account and its first device.
+* **Link code** — minted on a device already signed in, valid ten minutes,
+  single use. Holding a working device is the authority to add another.
+* **Recovery code** — issued once at signup, stored hashed, and the only route
+  back when no device survives. It is deliberately *not* consumed on use:
+  someone recovering a lost phone may have to do it again, and burning their
+  only route on first use would strand them.
+
+Removing a device ends its access and nothing else — entries belong to the
+account, so a lost phone costs a session, not a log. Deleting the *account* is
+the destructive operation.
+
+Invite, link and recovery codes are all stored as SHA-256 hashes, as are device
+tokens, so the database holds no reusable secret. Redemption is globally
+throttled: with no client address passed through the proxy there is no
+per-client key to throttle on, and none should be introduced for this.
+
+Admin routes are reachable only on the private listener that injects
+`X-Admin`; the public listener answers 404 for those paths before the request
+reaches the app.
 
 ## Deploying
 

@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { db, nowIso, PHOTO_DIR } from './db.js';
 import {
   requireDevice, requireAdmin, redeemInvite, setTokenCookie,
-  createInvite, listInvites, COOKIE_NAME
+  createInvite, listInvites, COOKIE_NAME,
+  createLinkCode, redeemLinkCode, redeemRecovery, resetRecovery,
+  listDevices, revokeDevice, ThrottledError
 } from './auth.js';
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
 import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
@@ -55,14 +57,76 @@ app.get('/api/health', (req, res) => {
 
 // ------------------------------------------------------------------ auth
 
+const deviceLabel = (v) => (typeof v === 'string' ? v.slice(0, 60) : null);
+
 app.post('/api/auth/redeem', (req, res) => {
-  const { code, label } = req.body || {};
-  const result = redeemInvite(code, typeof label === 'string' ? label.slice(0, 60) : null);
+  const result = redeemInvite(req.body?.code, deviceLabel(req.body?.label));
   if (!result) {
     return res.status(400).json({ error: 'bad_code', message: 'That code is not valid, or has already been used.' });
   }
   setTokenCookie(res, result.token);
-  res.json({ ok: true, deviceId: result.deviceId });
+  // The recovery code is returned exactly once, here. It is stored hashed and
+  // cannot be shown again -- only replaced.
+  res.json({
+    ok: true,
+    accountId: result.accountId,
+    deviceId: result.deviceId,
+    recoveryCode: result.recoveryCode
+  });
+});
+
+/** Joins this device to an existing account using a code from another device. */
+app.post('/api/auth/link', (req, res) => {
+  const result = redeemLinkCode(req.body?.code, deviceLabel(req.body?.label));
+  if (!result) {
+    return res.status(400).json({ error: 'bad_code', message: 'That link code is not valid or has expired.' });
+  }
+  setTokenCookie(res, result.token);
+  res.json({ ok: true, accountId: result.accountId, deviceId: result.deviceId });
+});
+
+/** Last resort: the code written down at signup, when no device survives. */
+app.post('/api/auth/recover', (req, res) => {
+  const result = redeemRecovery(req.body?.code, deviceLabel(req.body?.label));
+  if (!result) {
+    return res.status(400).json({ error: 'bad_code', message: 'That recovery code is not valid.' });
+  }
+  setTokenCookie(res, result.token);
+  res.json({ ok: true, accountId: result.accountId, deviceId: result.deviceId });
+});
+
+// ------------------------------------------------------------- devices
+
+app.get('/api/devices', requireDevice, (req, res) => {
+  res.json({
+    devices: listDevices(req.device.account_id).map((d) => ({
+      id: d.id, label: d.label, createdAt: d.created_at, lastSeen: d.last_seen,
+      current: d.id === req.device.id
+    }))
+  });
+});
+
+app.post('/api/devices/link-code', requireDevice, (req, res) => {
+  res.status(201).json(createLinkCode(req.device.account_id));
+});
+
+app.delete('/api/devices/:id', requireDevice, (req, res) => {
+  if (req.params.id === req.device.id) {
+    // Revoking the device you are holding would sign you out with no way back
+    // except the recovery code. Logging out is the deliberate way to do that.
+    return res.status(400).json({
+      error: 'cannot_revoke_self',
+      message: 'Use sign out to remove this device.'
+    });
+  }
+  if (!revokeDevice(req.device.account_id, req.params.id)) {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/devices/recovery-code', requireDevice, (req, res) => {
+  res.json({ recoveryCode: resetRecovery(req.device.account_id) });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -72,8 +136,8 @@ app.post('/api/auth/logout', (req, res) => {
 
 // --------------------------------------------------------------- profile
 
-function profileFor(deviceId) {
-  const row = db.prepare('SELECT * FROM profiles WHERE device_id = ?').get(deviceId);
+function profileFor(accountId) {
+  const row = db.prepare('SELECT * FROM profiles WHERE account_id = ?').get(accountId);
   if (!row) return null;
   return {
     weightKg: row.weight_kg, heightCm: row.height_cm,
@@ -83,8 +147,16 @@ function profileFor(deviceId) {
 }
 
 app.get('/api/me', requireDevice, (req, res) => {
-  const profile = profileFor(req.device.id);
+  const profile = profileFor(req.device.account_id);
+  // Accounts created by the v1 -> accounts migration have no recovery code:
+  // it is issued when an invite is redeemed, which for them already happened.
+  // The client surfaces this, because such an account is exactly one lost
+  // cookie away from an unreachable history.
+  const account = db.prepare('SELECT recovery_hash FROM accounts WHERE id = ?')
+    .get(req.device.account_id);
   res.json({
+    hasRecoveryCode: Boolean(account?.recovery_hash),
+    accountId: req.device.account_id,
     deviceId: req.device.id,
     label: req.device.label,
     profile,
@@ -120,15 +192,15 @@ app.put('/api/profile', requireDevice, (req, res) => {
   }
 
   db.prepare(`
-    INSERT INTO profiles (device_id, weight_kg, height_cm, age_years, sex, activity, updated_at)
+    INSERT INTO profiles (account_id, weight_kg, height_cm, age_years, sex, activity, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(device_id) DO UPDATE SET
+    ON CONFLICT(account_id) DO UPDATE SET
       weight_kg = excluded.weight_kg, height_cm = excluded.height_cm,
       age_years = excluded.age_years, sex = excluded.sex,
       activity = excluded.activity, updated_at = excluded.updated_at
-  `).run(req.device.id, weightKg, heightCm, ageYears, sex, activity, nowIso());
+  `).run(req.device.account_id, weightKg, heightCm, ageYears, sex, activity, nowIso());
 
-  const profile = profileFor(req.device.id);
+  const profile = profileFor(req.device.account_id);
   res.json({ profile, maintenance: maintenanceEnergy(profile) });
 });
 
@@ -181,10 +253,10 @@ app.get('/api/foods/recent', requireDevice, (req, res) => {
   const rows = db.prepare(`
     SELECT je.value AS item_json, e.created_at
     FROM entries e, json_each(e.items_json) je
-    WHERE e.device_id = ?
+    WHERE e.account_id = ?
     ORDER BY e.created_at DESC
     LIMIT 400
-  `).all(req.device.id);
+  `).all(req.device.account_id);
 
   const parsed = [];
   for (const row of rows) {
@@ -234,11 +306,11 @@ app.post('/api/entries', requireDevice, (req, res) => {
   const photoId = savePhoto(b.image, b.mimeType);
 
   db.prepare(`
-    INSERT INTO entries (id, device_id, day, meal, created_at, photo_id, note,
+    INSERT INTO entries (id, account_id, device_id, day, meal, created_at, photo_id, note,
                          portion_confirmed, portion_source, items_json, totals_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, req.device.id, day,
+    id, req.device.account_id, req.device.id, day,
     MEALS.includes(b.meal) ? b.meal : null,
     nowIso(), photoId,
     typeof b.note === 'string' ? b.note.slice(0, 500) : null,
@@ -268,10 +340,10 @@ app.get('/api/entries', requireDevice, (req, res) => {
   if (!day) return res.status(400).json({ error: 'bad_day' });
 
   const rows = db.prepare(
-    'SELECT * FROM entries WHERE device_id = ? AND day = ? ORDER BY created_at'
-  ).all(req.device.id, day).map(rowToEntry);
+    'SELECT * FROM entries WHERE account_id = ? AND day = ? ORDER BY created_at'
+  ).all(req.device.account_id, day).map(rowToEntry);
 
-  const profile = profileFor(req.device.id);
+  const profile = profileFor(req.device.account_id);
   const summary = summariseDay(rows, profile ? maintenanceEnergy(profile) : null);
 
   res.json({ day, entries: rows, summary, split: macroSplit(summary.totals) });
@@ -282,9 +354,9 @@ app.get('/api/days', requireDevice, (req, res) => {
   const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 14));
   const rows = db.prepare(`
     SELECT day, COUNT(*) AS entries, SUM(json_extract(totals_json, '$.calories')) AS calories
-    FROM entries WHERE device_id = ?
+    FROM entries WHERE account_id = ?
     GROUP BY day ORDER BY day DESC LIMIT ?
-  `).all(req.device.id, limit);
+  `).all(req.device.account_id, limit);
   res.json({ days: rows.map((r) => ({ ...r, calories: Math.round(r.calories || 0) })) });
 });
 
@@ -296,8 +368,8 @@ app.get('/api/days', requireDevice, (req, res) => {
  * call to answer a question the user has already answered by hand.
  */
 app.put('/api/entries/:id', requireDevice, (req, res) => {
-  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND device_id = ?')
-    .get(req.params.id, req.device.id);
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
   if (!row) return res.status(404).json({ error: 'not_found' });
 
   const b = req.body || {};
@@ -326,8 +398,8 @@ app.put('/api/entries/:id', requireDevice, (req, res) => {
 });
 
 app.delete('/api/entries/:id', requireDevice, (req, res) => {
-  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND device_id = ?')
-    .get(req.params.id, req.device.id);
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
   if (!row) return res.status(404).json({ error: 'not_found' });
 
   db.prepare('DELETE FROM entries WHERE id = ?').run(row.id);
@@ -340,8 +412,8 @@ app.delete('/api/entries/:id', requireDevice, (req, res) => {
 });
 
 app.get('/api/photo/:id', requireDevice, (req, res) => {
-  const owned = db.prepare('SELECT 1 FROM entries WHERE photo_id = ? AND device_id = ?')
-    .get(req.params.id, req.device.id);
+  const owned = db.prepare('SELECT 1 FROM entries WHERE photo_id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
   if (!owned) return res.status(404).end();
 
   const file = path.join(PHOTO_DIR, path.basename(req.params.id));
@@ -362,31 +434,76 @@ app.get('/api/admin/invites', requireAdmin, (req, res) => {
   res.json({ invites: listInvites().map(({ code_hash, ...rest }) => rest) });
 });
 
+app.get('/api/admin/accounts', requireAdmin, (req, res) => {
+  res.json({
+    accounts: db.prepare(`
+      SELECT a.id, a.created_at,
+             (SELECT COUNT(*) FROM devices d WHERE d.account_id = a.id) AS devices,
+             (SELECT COUNT(*) FROM entries e WHERE e.account_id = a.id) AS entries,
+             (SELECT MAX(d.last_seen) FROM devices d WHERE d.account_id = a.id) AS last_seen
+      FROM accounts a ORDER BY a.created_at DESC
+    `).all()
+  });
+});
+
 app.get('/api/admin/devices', requireAdmin, (req, res) => {
   res.json({
     devices: db.prepare(`
-      SELECT d.id, d.label, d.created_at, d.last_seen,
-             (SELECT COUNT(*) FROM entries e WHERE e.device_id = d.id) AS entries
+      SELECT d.id, d.account_id, d.label, d.created_at, d.last_seen
       FROM devices d ORDER BY d.created_at DESC
     `).all()
   });
 });
 
+/** Revokes one device's access. The account and its history are untouched. */
 app.delete('/api/admin/devices/:id', requireAdmin, (req, res) => {
-  const photos = db.prepare('SELECT photo_id FROM entries WHERE device_id = ? AND photo_id IS NOT NULL')
-    .all(req.params.id);
   const out = db.prepare('DELETE FROM devices WHERE id = ?').run(req.params.id);
   if (!out.changes) return res.status(404).json({ error: 'not_found' });
-  for (const p of photos) {
-    try { fs.unlinkSync(path.join(PHOTO_DIR, p.photo_id)); } catch {}
-  }
   res.json({ ok: true });
+});
+
+/**
+ * Deletes a person: every device, entry, photo and profile.
+ *
+ * Devices are removed first and explicitly. devices.account_id was added by an
+ * ALTER, which cannot carry an ON DELETE clause, so it defaults to NO ACTION
+ * and a device blocks its own account's deletion. Doing it in dependency order
+ * inside one transaction is both correct and clearer than the constraint
+ * would have been.
+ */
+app.delete('/api/admin/accounts/:id', requireAdmin, (req, res) => {
+  const accountId = req.params.id;
+  const photos = db.prepare('SELECT photo_id FROM entries WHERE account_id = ? AND photo_id IS NOT NULL')
+    .all(accountId);
+
+  db.exec('BEGIN IMMEDIATE');
+  let removed;
+  try {
+    db.prepare('DELETE FROM devices WHERE account_id = ?').run(accountId);
+    removed = db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId).changes;
+    if (!removed) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ error: 'not_found' });
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  // Files only once the rows are certainly gone: an unlinked photo whose row
+  // survived a rollback would be a broken entry rather than a tidy one.
+  let filesDeleted = 0;
+  for (const p of photos) {
+    try { fs.unlinkSync(path.join(PHOTO_DIR, p.photo_id)); filesDeleted++; } catch {}
+  }
+  res.json({ ok: true, photosDeleted: filesDeleted });
 });
 
 // ----------------------------------------------------------------- errors
 
 app.use((err, req, res, next) => {
-  if (err instanceof AnalysisError || err instanceof LookupError) {
+  if (err instanceof AnalysisError || err instanceof LookupError || err instanceof ThrottledError) {
     return res.status(err.status).json({ error: err.code, message: err.message });
   }
   console.error('unhandled', err);
