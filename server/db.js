@@ -205,6 +205,20 @@ addColumnIfMissing('entries', 'portion_source', 'TEXT');
 migrateToAccounts();
 
 db.exec(`
+  -- Weight readings, one per row. Kept as a series rather than overwriting
+  -- profiles.weight_kg, because the trend is what the expenditure estimate
+  -- consumes and a single scalar cannot express one.
+  CREATE TABLE IF NOT EXISTS weights (
+    id          TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    day         TEXT NOT NULL,
+    kg          REAL NOT NULL,
+    measured_at TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE (account_id, day)
+  );
+  CREATE INDEX IF NOT EXISTS idx_weights_account ON weights(account_id, day);
+
   -- Short-lived codes that add a second device to an existing account. Minted
   -- only from a device already signed in, so possession of a working device is
   -- the authority for adding another.

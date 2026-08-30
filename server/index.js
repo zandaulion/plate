@@ -16,6 +16,8 @@ import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js
 import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
 import { summariseRecent } from '../core/foods.js';
 import { toJson, toCsv } from '../core/export.js';
+import { smoothSeries, weightTrend } from '../core/weight.js';
+import { adaptiveExpenditure } from '../core/expenditure.js';
 import { zip } from './zip.js';
 import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
@@ -163,6 +165,7 @@ app.get('/api/me', requireDevice, (req, res) => {
     label: req.device.label,
     profile,
     maintenance: profile ? maintenanceEnergy(profile) : null,
+    expenditure: expenditureFor(req.device.account_id),
     activityLevels: ACTIVITY_LEVELS,
     meals: MEALS,
     analysisConfigured: isConfigured(),
@@ -345,10 +348,15 @@ app.get('/api/entries', requireDevice, (req, res) => {
     'SELECT * FROM entries WHERE account_id = ? AND day = ? ORDER BY created_at'
   ).all(req.device.account_id, day).map(rowToEntry);
 
-  const profile = profileFor(req.device.account_id);
-  const summary = summariseDay(rows, profile ? maintenanceEnergy(profile) : null);
+  // The day is compared against measured expenditure when there is enough
+  // evidence for one, and the formula otherwise -- the summary should not be
+  // the only screen still using a population average.
+  const expenditure = expenditureFor(req.device.account_id);
+  const summary = summariseDay(rows, expenditure.available ? expenditure : null);
 
-  res.json({ day, entries: rows, summary, split: macroSplit(summary.totals) });
+  res.json({
+    day, entries: rows, summary, expenditure, split: macroSplit(summary.totals)
+  });
 });
 
 /** Recent days, for the history strip. */
@@ -423,6 +431,81 @@ app.get('/api/photo/:id', requireDevice, (req, res) => {
   res.type(file.endsWith('.png') ? 'image/png' : 'image/jpeg');
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   fs.createReadStream(file).pipe(res);
+});
+
+// ---------------------------------------------------------------- weight
+
+/**
+ * One reading per calendar day, replacing any earlier one for that day.
+ *
+ * Weighing twice in a morning is common and the second reading is not new
+ * evidence, so the day is the unit. Storing both would double that day's pull
+ * on the trend for no reason.
+ */
+app.put('/api/weights', requireDevice, (req, res) => {
+  const kg = Number(req.body?.kg);
+  if (!Number.isFinite(kg) || kg < 20 || kg > 400) {
+    return res.status(400).json({ error: 'out_of_range', message: 'That weight looks wrong.' });
+  }
+
+  const day = typeof req.body?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.day)
+    ? req.body.day : null;
+  if (!day) return res.status(400).json({ error: 'bad_day' });
+
+  const measuredAt = typeof req.body?.at === 'string' && !Number.isNaN(Date.parse(req.body.at))
+    ? req.body.at : `${day}T12:00:00.000Z`;
+
+  db.prepare(`
+    INSERT INTO weights (id, account_id, day, kg, measured_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, day) DO UPDATE SET
+      kg = excluded.kg, measured_at = excluded.measured_at
+  `).run(crypto.randomUUID(), req.device.account_id, day, kg, measuredAt, nowIso());
+
+  res.json({ ok: true, day, kg });
+});
+
+function weightRows(accountId, limitDays = 180) {
+  const from = new Date(Date.now() - limitDays * 86400000).toISOString().slice(0, 10);
+  return db.prepare(
+    'SELECT day, kg, measured_at FROM weights WHERE account_id = ? AND day >= ? ORDER BY day'
+  ).all(accountId, from).map((r) => ({ day: r.day, kg: r.kg, at: r.measured_at }));
+}
+
+app.get('/api/weights', requireDevice, (req, res) => {
+  const rows = weightRows(req.device.account_id);
+  res.json({ weights: rows, series: smoothSeries(rows), trend: weightTrend(rows) });
+});
+
+app.delete('/api/weights/:day', requireDevice, (req, res) => {
+  const out = db.prepare('DELETE FROM weights WHERE account_id = ? AND day = ?')
+    .run(req.device.account_id, req.params.day);
+  if (!out.changes) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
+});
+
+/** Everything the expenditure estimate needs, in one call. */
+function expenditureFor(accountId) {
+  const entries = db.prepare(`
+    SELECT day, portion_source, portion_confirmed, totals_json
+    FROM entries WHERE account_id = ? AND day >= ?
+  `).all(accountId, new Date(Date.now() - 40 * 86400000).toISOString().slice(0, 10))
+    .map((r) => ({
+      day: r.day,
+      portionSource: r.portion_source,
+      portionConfirmed: r.portion_confirmed,
+      totals: JSON.parse(r.totals_json)
+    }));
+
+  return adaptiveExpenditure({
+    entries,
+    weights: weightRows(accountId, 40),
+    profile: profileFor(accountId)
+  });
+}
+
+app.get('/api/expenditure', requireDevice, (req, res) => {
+  res.json(expenditureFor(req.device.account_id));
 });
 
 // ---------------------------------------------------------------- export

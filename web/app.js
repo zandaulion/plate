@@ -10,6 +10,7 @@ import {
 } from '/core/analysis/estimate.js';
 import { toItem } from '/core/foods.js';
 import { localDayKey } from '/core/day.js';
+import { smoothSeries } from '/core/weight.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -23,6 +24,7 @@ const state = {
   meal: null,
   busy: false,
   entriesById: new Map(),
+  expenditure: null,
   // One sheet serves three paths: seeded from a photo, started empty and
   // filled by search, or loaded from a saved entry. Keeping them in one place
   // avoids three near-identical editors drifting apart.
@@ -222,7 +224,7 @@ function shiftDay(key, delta) {
   return localDayKey(date);
 }
 
-function renderMaintenance(summary) {
+function renderMaintenance(summary, expenditure) {
   const el = $('maintenance');
   const m = summary.maintenance;
 
@@ -233,15 +235,21 @@ function renderMaintenance(summary) {
   }
 
   el.className = 'maintenance';
+  const measured = expenditure?.method === 'measured';
+  // How the figure was arrived at changes what it is worth, so it is stated
+  // rather than left for the user to assume.
+  const source = measured
+    ? 'measured from your weight and what you logged'
+    : 'estimated from your details';
+
   const b = summary.balance;
-  // The band is genuinely wide, so a day inside it is reported as
-  // indistinguishable from maintenance rather than given a false precision.
   if (b?.withinBand) {
-    el.innerHTML = `About what you burn &mdash; roughly <b>${m.low}&ndash;${m.high} kcal</b> a day.`;
+    el.innerHTML = `About what you burn &mdash; roughly <b>${m.low}&ndash;${m.high} kcal</b> a day,
+      ${source}.`;
   } else if (b) {
     const word = b.kcal < 0 ? 'under' : 'over';
-    el.innerHTML = `<b>${Math.abs(b.kcal)} kcal</b> ${word} your estimated
-      <b>${m.kcal}</b> &mdash; the estimate itself spans ${m.low}&ndash;${m.high}.`;
+    el.innerHTML = `<b>${Math.abs(b.kcal)} kcal</b> ${word} the <b>${m.kcal}</b> you burn
+      &mdash; ${source}, and spanning ${m.low}&ndash;${m.high}.`;
   }
 }
 
@@ -308,8 +316,9 @@ async function loadDay() {
   $('day-label').textContent = dayTitle(state.day);
   const data = await api(`/api/entries?day=${state.day}`);
 
+  state.expenditure = data.expenditure || null;
   $('day-kcal').textContent = Math.round(data.summary.totals.calories);
-  renderMaintenance(data.summary);
+  renderMaintenance(data.summary, data.expenditure);
   renderSplit(data.split);
   renderMacros($('macros'), data.summary.totals);
   renderEntries(data.entries);
@@ -935,6 +944,7 @@ const closeProfile = () => dismissScreen('profile');
 $('open-profile').addEventListener('click', () => {
   fillProfile();
   loadDevices();
+  loadWeight();
   renderRecoveryState();
   $('code-box').hidden = true;
   $('profile').hidden = false;
@@ -969,6 +979,129 @@ $('profile-form').addEventListener('submit', async (ev) => {
       ? 'Those numbers look out of range — check them and try again.'
       : e.message;
     err.hidden = false;
+  }
+});
+
+// ------------------------------------------------------- weight & burn
+
+/**
+ * Raw readings as faint dots, and the fitted trend as a straight line.
+ *
+ * Both are drawn deliberately: the dots show a person their scale really does
+ * jump around, which is the argument for not reacting to any single morning.
+ * The line is the *least-squares fit* rather than a moving average, because
+ * that fit is what the expenditure figure is computed from -- drawing a
+ * different smoother would put a line on screen that disagrees with the number
+ * beside it.
+ */
+function renderWeightChart(rows, trend) {
+  const el = $('weight-chart');
+  const series = smoothSeries(rows);
+
+  if (series.length < 2) {
+    el.innerHTML = '<svg viewBox="0 0 300 84" preserveAspectRatio="none">'
+      + '<text class="empty" x="8" y="46">Log your weight a few times to see a trend.</text></svg>';
+    return;
+  }
+
+  const w = 300, h = 84, pad = 6;
+  const xs = series.map((p) => p.at);
+  const ys = series.map((p) => p.kg);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const spanY = Math.max(0.5, y1 - y0); // never let a flat series fill the box
+
+  const px = (t) => pad + ((t - x0) / Math.max(1, x1 - x0)) * (w - pad * 2);
+  const py = (kg) => h - pad - ((kg - y0) / spanY) * (h - pad * 2);
+
+  const dots = series.map((p) => `<circle class="raw" cx="${px(p.at).toFixed(1)}" cy="${py(p.kg).toFixed(1)}" r="2"/>`).join('');
+
+  let line = '';
+  if (trend?.interceptKg !== undefined) {
+    const fitAt = (t) => trend.interceptKg + trend.slopeKgPerDay * ((t - trend.fitFrom) / 86400000);
+    line = `<path class="trend" d="M${px(x0).toFixed(1)},${py(fitAt(x0)).toFixed(1)}`
+      + ` L${px(x1).toFixed(1)},${py(fitAt(x1)).toFixed(1)}"/>`;
+  }
+
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${dots}${line}</svg>`;
+  el.setAttribute('aria-label',
+    `Weight from ${series[0].kg.toFixed(1)} to ${series[series.length - 1].kg.toFixed(1)} kilograms`);
+}
+
+function renderExpenditure(exp) {
+  const el = $('exp-detail');
+  if (!exp) { el.innerHTML = ''; return; }
+
+  if (exp.method !== 'measured') {
+    const p = exp.progress || {};
+    const parts = [];
+    if (p.loggedDays < p.neededDays) parts.push(`${p.neededDays - p.loggedDays} more logged days`);
+    if (p.weighings < p.neededWeighings) parts.push(`${p.neededWeighings - p.weighings} more weigh-ins`);
+
+    el.innerHTML = `
+      <div class="big">${exp.available ? `${exp.kcal} kcal` : '&mdash;'}
+        <span class="method formula">formula</span></div>
+      <p class="progress">${exp.available
+        ? 'From your height, weight, age and activity — a population average, not you.'
+        : 'Fill in your details above for a first estimate.'}</p>
+      <p class="progress">${parts.length
+        ? `Log ${parts.join(' and ')} and this becomes a measurement of what you actually burn.`
+        : 'Keep logging and weighing — this becomes a measurement once there is enough.'}</p>`;
+    return;
+  }
+
+  const b = exp.basis;
+  const dir = b.slopeKgPerWeek < 0 ? 'losing' : 'gaining';
+  el.innerHTML = `
+    <div class="big">${exp.kcal} kcal <span class="method measured">measured</span></div>
+    <p class="progress">Likely ${exp.low}&ndash;${exp.high}. Worked out from what you ate and how
+      your weight moved, not from a formula.</p>
+    <dl>
+      <dt>Weight</dt><dd>${dir} ${Math.abs(b.slopeKgPerWeek).toFixed(2)} kg/week</dd>
+      <dt>You ate</dt><dd>${b.meanIntake} kcal/day on ${b.loggedDays} days</dd>
+      <dt>Weigh-ins</dt><dd>${b.weighings} over ${Math.round(b.weightSpanDays)} days</dd>
+      ${exp.formula?.kcal ? `<dt>Formula says</dt><dd>${exp.formula.kcal} kcal</dd>` : ''}
+    </dl>`;
+}
+
+async function loadWeight() {
+  try {
+    const [{ weights, trend }, exp] = await Promise.all([
+      api('/api/weights'),
+      api('/api/expenditure')
+    ]);
+    state.expenditure = exp;
+    renderWeightChart(weights, trend);
+    renderExpenditure(exp);
+
+    if (trend) {
+      const dir = trend.slopeKgPerWeek < 0 ? 'down' : 'up';
+      $('weight-trend').textContent =
+        `${trend.readings} weigh-ins over ${Math.round(trend.spanDays)} days — trending ${dir} `
+        + `${Math.abs(trend.slopeKgPerWeek).toFixed(2)} kg a week.`;
+    } else {
+      $('weight-trend').textContent = 'A trend needs at least 3 weigh-ins spread over a week.';
+    }
+    if (weights.length) $('w-kg').placeholder = `Last: ${weights[weights.length - 1].kg} kg`;
+  } catch {
+    $('weight-trend').textContent = '';
+  }
+}
+
+$('w-save').addEventListener('click', async () => {
+  const kg = Number(String($('w-kg').value).replace(',', '.'));
+  if (!Number.isFinite(kg) || kg <= 0) return toast('Enter a weight first.');
+  try {
+    await api('/api/weights', {
+      method: 'PUT',
+      body: JSON.stringify({ day: localDayKey(), kg, at: new Date().toISOString() })
+    });
+    $('w-kg').value = '';
+    toast('Weight logged');
+    await loadWeight();
+    await loadDay();
+  } catch (err) {
+    toast(err.message);
   }
 });
 

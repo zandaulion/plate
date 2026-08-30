@@ -452,3 +452,36 @@ input[type="range"]::-moz-range-thumb {
 .export-row a.secondary {
   display: block; text-align: center; text-decoration: none; color: var(--ink);
 }
+
+
+/* -------------------------------------------------------- weight & burn */
+
+.weigh-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.weigh-row input { flex: 1; }
+.weigh-row .secondary { width: auto; flex: 0 0 auto; padding-inline: 20px; }
+
+.spark { width: 100%; height: 84px; margin: 4px 0 6px; }
+.spark svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.spark .raw { fill: var(--ink-3); opacity: .5; }
+.spark .trend { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.spark .empty { fill: var(--ink-3); font-size: 12px; }
+
+.exp {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 8px;
+}
+.exp .big {
+  font-size: 1.9rem; font-weight: 700; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.exp .method {
+  display: inline-block; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 5px; padding: 0 5px; margin-left: 8px;
+  vertical-align: middle;
+}
+.exp .method.measured { color: var(--accent); }
+.exp .method.formula { color: var(--ink-3); }
+.exp dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 12px 0 0; font-size: .84rem; }
+.exp dt { color: var(--ink-3); }
+.exp dd { margin: 0; font-variant-numeric: tabular-nums; }
+.exp .progress { margin: 10px 0 0; font-size: .84rem; color: var(--ink-2); }

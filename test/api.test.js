@@ -611,3 +611,111 @@ test('the ZIP export is a valid archive containing the data and the photos', asy
     assert.match(listing, new RegExp(photo.replace(/[.]/g, '\\.')), `${photo} missing from archive`);
   }
 });
+
+// ------------------------------------------------- weight & expenditure
+
+test('a weight reading is stored once per day and replaced on a repeat', async () => {
+  const { auth } = await registerDevice();
+  assert.equal((await api('/api/weights', {
+    method: 'PUT', headers: auth, body: JSON.stringify({ day: '2026-08-10', kg: 80.4 })
+  })).status, 200);
+
+  // Weighing again the same morning is not new evidence.
+  await api('/api/weights', {
+    method: 'PUT', headers: auth, body: JSON.stringify({ day: '2026-08-10', kg: 80.9 })
+  });
+
+  const { weights } = await (await api('/api/weights', { headers: auth })).json();
+  assert.equal(weights.length, 1);
+  assert.equal(weights[0].kg, 80.9, 'the later reading wins');
+});
+
+test('impossible weights are refused', async () => {
+  const { auth } = await registerDevice();
+  for (const kg of [0, -5, 900, 'heavy']) {
+    const res = await api('/api/weights', {
+      method: 'PUT', headers: auth, body: JSON.stringify({ day: '2026-08-10', kg })
+    });
+    assert.equal(res.status, 400, `should refuse ${kg}`);
+  }
+});
+
+test('weights are scoped to the account', async () => {
+  const a = await registerDevice();
+  const b = await registerDevice();
+  await api('/api/weights', { method: 'PUT', headers: a.auth, body: JSON.stringify({ day: '2026-08-11', kg: 77 }) });
+
+  assert.equal((await (await api('/api/weights', { headers: b.auth })).json()).weights.length, 0);
+  assert.equal((await api('/api/weights/2026-08-11', { method: 'DELETE', headers: b.auth })).status, 404);
+  assert.equal((await api('/api/weights/2026-08-11', { method: 'DELETE', headers: a.auth })).status, 200);
+});
+
+test('the weight endpoint returns a smoothed series and a trend', async () => {
+  const { auth } = await registerDevice();
+  const start = Date.parse('2026-08-01T07:00:00Z');
+  for (let i = 0; i < 15; i++) {
+    const at = new Date(start + i * 86400000);
+    await api('/api/weights', {
+      method: 'PUT', headers: auth,
+      body: JSON.stringify({ day: at.toISOString().slice(0, 10), kg: 80 - i * 0.05, at: at.toISOString() })
+    });
+  }
+  const body = await (await api('/api/weights', { headers: auth })).json();
+  assert.equal(body.series.length, 15);
+  assert.ok('trend' in body.series[0], 'the smoothed value rides alongside the raw one');
+  assert.ok(Math.abs(body.trend.slopeKgPerWeek + 0.35) < 0.01);
+});
+
+test('expenditure falls back to the formula and reports what is missing', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 80, heightCm: 180, ageYears: 30, sex: 'male', activity: 'moderate' })
+  });
+
+  const out = await (await api('/api/expenditure', { headers: auth })).json();
+  assert.equal(out.method, 'formula');
+  assert.equal(out.kcal, Math.round(1780 * 1.55));
+  assert.ok(out.missing.some((m) => m.what === 'weighings'));
+});
+
+test('expenditure becomes measured once there is enough evidence', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 80, heightCm: 180, ageYears: 30, sex: 'male', activity: 'moderate' })
+  });
+
+  // 2,000 kcal/day against a true 2,500 expenditure: a 500 kcal deficit, which
+  // must show up as roughly 0.065 kg/day of loss.
+  const slope = (2000 - 2500) / 7700;
+  const now = Date.now();
+  for (let i = 27; i >= 0; i--) {
+    const at = new Date(now - i * 86400000);
+    const day = at.toISOString().slice(0, 10);
+    await api('/api/entries', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({
+        day, portionSource: 'weighed',
+        items: [{ name: 'food', grams: 500, source: 'manual', per: { calories: 4, protein: 0, fat: 0, carbs: 0 } }]
+      })
+    });
+    await api('/api/weights', {
+      method: 'PUT', headers: auth,
+      body: JSON.stringify({ day, kg: 80 + slope * (27 - i), at: at.toISOString() })
+    });
+  }
+
+  const out = await (await api('/api/expenditure', { headers: auth })).json();
+  assert.equal(out.method, 'measured');
+  assert.ok(Math.abs(out.kcal - 2500) < 60, `expected ~2500, got ${out.kcal}`);
+  assert.ok(out.low < 2500 && 2500 < out.high);
+  assert.ok(out.basis.coveragePct >= 75);
+  // The formula is carried alongside, and disagrees -- which is the point.
+  assert.ok(out.formula.kcal > 0);
+
+  // And the day view compares against the measured figure, not the formula.
+  const day = await (await api(`/api/entries?day=${new Date(now).toISOString().slice(0, 10)}`, { headers: auth })).json();
+  assert.equal(day.expenditure.method, 'measured');
+  assert.equal(day.summary.maintenance.kcal, out.kcal);
+});

@@ -211,6 +211,62 @@ something already saved. The weight slider appears only when part of the meal
 came from a photo — for database items the grams were entered deliberately, so
 a proportional rescale would fight the user.
 
+## What you actually burn
+
+Mifflin-St Jeor estimates expenditure from height, weight, age and sex, then
+multiplies by an activity factor picked from a list. It is a population average
+with an arbitrary coefficient attached, and it cannot notice that a particular
+person runs cold, fidgets, or has adapted to months of dieting. The market
+survey names this as the sector's weak point, and it was what this app did.
+
+The energy balance identity does better once there is data:
+
+```
+expenditure = mean intake - (weight slope in kg/day x 7700 kcal/kg)
+```
+
+`core/expenditure.js` fits a least-squares line through the weight readings,
+takes the mean of logged intake, and reports the result **with a band** built
+from three independent errors combined in quadrature: the mean of a noisy
+intake estimate, the uncertainty in the weight slope, and the energy density of
+the tissue being gained or lost (7,700 kcal/kg is an approximation — fat is
+nearer 9,400, lean tissue far less because it is mostly water).
+
+On a simulated user with a true expenditure of 2,500 kcal and a deliberately
+wobbly scale, it returns **2,487 (2,260–2,713)**, while Mifflin-St Jeor says
+2,759. Both numbers are shown, because a large disagreement between them is
+itself information — usually that intake is being under-logged.
+
+**It refuses rather than guessing.** A measurement needs 14 logged days, 75%
+coverage of the 28-day window, and 6 weigh-ins spanning a fortnight. Coverage
+is the strict one and deliberately so: weight change reflects *every* day in
+the window, but mean intake can only be taken over the days that were logged,
+so using it assumes the missing days resembled the logged ones — and missed
+days are disproportionately the unusual meals. Below the threshold it falls
+back to the formula, labelled as such, and says exactly what is still needed.
+
+A day under 400 kcal is treated as partly logged and dropped, not as a day of
+near-fasting. Averaging those in would drag mean intake down and inflate
+expenditure by hundreds of kcal.
+
+**This is still a measurement, not a target.** It says what someone burns; it
+does not say what they should eat. That is the only reason the technique
+belongs in an app that refuses to prescribe.
+
+## Weight
+
+Stored as a series, one reading per calendar day, rather than the single
+scalar `profiles.weight_kg` — a trend is what the expenditure estimate
+consumes and a scalar cannot express one. Weighing twice in a morning replaces
+the day rather than double-counting it.
+
+The chart draws raw readings as faint dots and the **least-squares fit** as the
+line. The dots are there to show that the scale really does jump around, which
+is the argument against reacting to any single morning. The line is the fit
+rather than a moving average because the fit is what the expenditure figure was
+computed from; drawing a different smoother would put a line on screen that
+disagrees with the number beside it.
+
 ## Export
 
 Three shapes, all free, all complete, none gated:

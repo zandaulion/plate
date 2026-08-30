@@ -191,6 +191,19 @@
           <p class="hint" id="code-hint"></p>
         </div>
 
+        <h3 class="section-head">Weight</h3>
+        <div class="weigh-row">
+          <label for="w-kg" class="sr-only">Today's weight in kilograms</label>
+          <input id="w-kg" type="number" inputmode="decimal" min="20" max="400" step="0.1"
+                 placeholder="Weight today">
+          <button id="w-save" class="secondary" type="button">Log</button>
+        </div>
+        <div id="weight-chart" class="spark" role="img" aria-label="Weight trend"></div>
+        <p class="hint" id="weight-trend"></p>
+
+        <h3 class="section-head">What you burn</h3>
+        <div id="exp-detail" class="exp"></div>
+
         <h3 class="section-head">Your data</h3>
         <p class="hint">Everything this account holds, with nothing withheld and no
           account needed to read it back.</p>
