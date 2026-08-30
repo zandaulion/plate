@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Plate">
   <rect width="512" height="512" fill="#12140F"/>
   <g transform="translate(256 256) scale(0.66) translate(-256 -256)">
-    <rect x="148" y="168" width="56" height="138" rx="28" fill="#7CC79E"/>
-    <rect x="228" y="138" width="56" height="168" rx="28" fill="#E0B45F"/>
-    <rect x="308" y="108" width="56" height="198" rx="28" fill="#B79BD4"/>
+    <rect x="148" y="168" width="56" height="138" rx="28" fill="#CFD8CC"/>
+    <rect x="228" y="138" width="56" height="168" rx="28" fill="#CFD8CC"/>
+    <rect x="308" y="108" width="56" height="198" rx="28" fill="#CFD8CC"/>
     <rect x="148" y="250" width="216" height="56" rx="28" fill="#CFD8CC"/>
     <rect x="228" y="278" width="56" height="136" rx="28" fill="#CFD8CC"/>
   </g>

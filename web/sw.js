@@ -2,14 +2,14 @@
 //
 // CACHE_NAME must be bumped on every shell change, or installed clients keep
 // serving the old build indefinitely.
-const CACHE_NAME = 'plate-v13';
+const CACHE_NAME = 'plate-v14';
 
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js',
   '/core/analysis/estimate.js', '/core/analysis/prompt.js',
   '/core/nutrition.js', '/core/day.js', '/core/foods.js',
   '/core/weight.js', '/core/expenditure.js',
-  '/manifest.webmanifest', '/icons/icon.svg'
+  '/manifest.webmanifest', '/icons/icon.svg', '/icons/maskable.svg'
 ];
 
 self.addEventListener('install', (event) => {
