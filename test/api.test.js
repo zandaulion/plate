@@ -28,7 +28,7 @@ const api = (p, opts = {}) => fetch(base + p, {
 });
 
 async function registerDevice() {
-  const code = createInvite('test');
+  const { code } = createInvite('test');
   const res = await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) });
   assert.equal(res.status, 200);
   const cookie = res.headers.get('set-cookie').split(';')[0];
@@ -48,7 +48,7 @@ test('the API is closed without a token', async () => {
 });
 
 test('an invite code works exactly once', async () => {
-  const code = createInvite();
+  const { code } = createInvite();
   assert.equal((await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).status, 200);
   assert.equal((await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).status, 400);
 });
@@ -195,7 +195,7 @@ test('analysis rejects a request with no photo', async () => {
 
 test('a re-used code leaves no orphaned device behind', async () => {
   const { db } = await import('../server/db.js');
-  const code = createInvite();
+  const { code } = createInvite();
 
   await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) });
   const after = db.prepare('SELECT COUNT(*) AS n FROM devices').get().n;
@@ -326,7 +326,7 @@ async function linkNewDevice(auth, label = 'second') {
 }
 
 test('redeeming an invite returns a recovery code exactly once', async () => {
-  const code = createInvite();
+  const { code } = createInvite();
   const body = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
   assert.ok(body.recoveryCode, 'the recovery code is only ever shown here');
   assert.ok(body.accountId);
@@ -434,7 +434,7 @@ test('a device cannot revoke one belonging to someone else', async () => {
 });
 
 test('the recovery code restores access to the same account', async () => {
-  const code = createInvite();
+  const { code } = createInvite();
   const redeemed = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
   const original = { Cookie: `plate_token=x` }; // deliberately unusable: the phone is gone
 
@@ -449,7 +449,7 @@ test('the recovery code restores access to the same account', async () => {
 });
 
 test('a reissued recovery code retires the old one', async () => {
-  const code = createInvite();
+  const { code } = createInvite();
   const redeemed = await (await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) })).json();
   // Reissue from the signed-in device.
   const auth = { Cookie: (await (async () => {
@@ -718,4 +718,125 @@ test('expenditure becomes measured once there is enough evidence', async () => {
   const day = await (await api(`/api/entries?day=${new Date(now).toISOString().slice(0, 10)}`, { headers: auth })).json();
   assert.equal(day.expenditure.method, 'measured');
   assert.equal(day.summary.maintenance.kcal, out.kcal);
+});
+
+// ------------------------------------------- the shared invite console
+
+test('a created invite carries what the console needs to send it', async () => {
+  const inv = createInvite('for the console');
+  assert.ok(inv.id, 'an id to act on');
+  assert.ok(inv.code, 'the plaintext, once');
+  assert.ok(inv.expires_at, 'an expiry to display');
+  assert.equal(inv.expires_in_days, 7);
+});
+
+test('the invite listing exposes the plaintext only while it can still be used', async () => {
+  const inv = createInvite('pending');
+  let listed = (await (await api('/api/admin/invites', { headers: { 'X-Admin': '1' } })).json());
+  assert.equal(listed.ttl_days, 7);
+
+  let row = listed.invites.find((i) => i.id === inv.id);
+  assert.equal(row.code, inv.code, 'an unused invite can be re-sent');
+  assert.equal(row.used_at, null);
+
+  await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code: inv.code }) });
+
+  listed = await (await api('/api/admin/invites', { headers: { 'X-Admin': '1' } })).json();
+  row = listed.invites.find((i) => i.id === inv.id);
+  assert.ok(row.used_at, 'now marked used');
+  assert.equal(row.code, null, 'and the plaintext is gone from the response');
+  assert.ok(row.device_id, 'with the device it registered');
+});
+
+test('a spent invite leaves no plaintext in the database either', async () => {
+  const { db } = await import('../server/db.js');
+  const inv = createInvite('spent');
+  await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code: inv.code }) });
+
+  // Not merely hidden by the API: cleared at the source.
+  const row = db.prepare('SELECT code, url FROM invites WHERE id = ?').get(inv.id);
+  assert.equal(row.code, null);
+  assert.equal(row.url, null);
+});
+
+test('an invite can be cancelled before use, and then refuses to register', async () => {
+  const inv = createInvite('cancel me');
+  assert.equal((await api(`/api/admin/invites/${inv.id}/revoke`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: '{}'
+  })).status, 200);
+
+  assert.equal((await api('/api/auth/redeem', {
+    method: 'POST', body: JSON.stringify({ code: inv.code })
+  })).status, 400, 'a cancelled code must not work');
+});
+
+test('a used invite cannot be cancelled, and says why', async () => {
+  const inv = createInvite('used');
+  await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code: inv.code }) });
+
+  const res = await api(`/api/admin/invites/${inv.id}/revoke`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: '{}'
+  });
+  assert.equal(res.status, 404);
+  assert.ok((await res.json()).detail, 'the console shows detail on failure');
+});
+
+test('an expired invite refuses to register', async () => {
+  const { db } = await import('../server/db.js');
+  const inv = createInvite('stale');
+  db.prepare('UPDATE invites SET expires_at = ? WHERE id = ?')
+    .run(new Date(Date.now() - 1000).toISOString(), inv.id);
+
+  assert.equal((await api('/api/auth/redeem', {
+    method: 'POST', body: JSON.stringify({ code: inv.code })
+  })).status, 400);
+});
+
+test('revoking a device locks it out and can be undone', async () => {
+  const { auth } = await registerDevice();
+  const { devices } = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const me = devices[0];
+  assert.equal(me.revoked, false);
+
+  await api(`/api/admin/devices/${me.id}/revoke`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: true })
+  });
+  assert.equal((await api('/api/me', { headers: auth })).status, 401, 'revoked devices cannot authenticate');
+
+  // Reversible, which a delete would not have been.
+  await api(`/api/admin/devices/${me.id}/revoke`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: false })
+  });
+  assert.equal((await api('/api/me', { headers: auth })).status, 200, 'restore brings it back');
+});
+
+test('a device can be renamed from the console', async () => {
+  await registerDevice();
+  const { devices } = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const id = devices[0].id;
+
+  assert.equal((await api(`/api/admin/devices/${id}/label`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ label: "Ana's phone" })
+  })).status, 200);
+
+  const after = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  assert.equal(after.devices.find((d) => d.id === id).label, "Ana's phone");
+
+  assert.equal((await api(`/api/admin/devices/${id}/label`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ label: '' })
+  })).status, 400);
+});
+
+test('a revoked device is hidden from the account that owns it', async () => {
+  const { auth } = await registerDevice();
+  const second = await linkNewDevice(auth, 'spare');
+  const all = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const spare = all.devices.find((d) => d.label === 'spare');
+
+  await api(`/api/admin/devices/${spare.id}/revoke`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: true })
+  });
+
+  const mine = await (await api('/api/devices', { headers: auth })).json();
+  assert.ok(!mine.devices.some((d) => d.id === spare.id), 'the owner should not see a dead device');
 });

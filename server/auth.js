@@ -52,20 +52,70 @@ export class ThrottledError extends Error {
   }
 }
 
+export const INVITE_TTL_DAYS = 7;
+
+/**
+ * Where an invite link points. Left empty unless configured, so the public
+ * repo carries no hostname; the console then shows the code without a link
+ * rather than inventing one.
+ */
+const publicBase = () => (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+
 export function createInvite(label = null) {
   const code = randomCode();
-  db.prepare('INSERT INTO invites (code_hash, label, created_at) VALUES (?, ?, ?)')
-    .run(hash(code.replace(/-/g, '')), label, nowIso());
-  // The only moment the plaintext exists. It is never stored.
-  return code;
+  const base = publicBase();
+  const url = base ? `${base}/?invite=${encodeURIComponent(code)}` : null;
+  const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400000).toISOString();
+
+  const out = db.prepare(`
+    INSERT INTO invites (code_hash, code, label, url, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(hash(normaliseCode(code)), code, label, url, nowIso(), expiresAt);
+
+  return {
+    id: out.lastInsertRowid,
+    code,
+    url,
+    label,
+    expires_at: expiresAt,
+    expires_in_days: INVITE_TTL_DAYS
+  };
 }
 
+/**
+ * Invites as the console expects them.
+ *
+ * `code` and `url` are returned only while the invite can still register
+ * something. They are cleared in the database at that moment too, so this is
+ * reporting the absence rather than hiding a value that is still on disk.
+ */
 export function listInvites() {
-  return db.prepare(`
-    SELECT i.code_hash, i.label, i.created_at, i.redeemed_at, i.redeemed_by, d.label AS device_label
-    FROM invites i LEFT JOIN devices d ON d.id = i.redeemed_by
-    ORDER BY i.created_at DESC
+  const rows = db.prepare(`
+    SELECT id, label, code, url, created_at, expires_at, used_at, revoked, device_id
+    FROM invites ORDER BY created_at DESC
   `).all();
+
+  return {
+    ttl_days: INVITE_TTL_DAYS,
+    invites: rows.map((r) => ({
+      id: r.id,
+      label: r.label,
+      code: r.code,
+      url: r.url,
+      created_at: r.created_at,
+      expires_at: r.expires_at,
+      used_at: r.used_at,
+      revoked: Boolean(r.revoked),
+      device_id: r.device_id
+    }))
+  };
+}
+
+/** Cancels an unused invite and drops its plaintext. */
+export function revokeInvite(id) {
+  return db.prepare(
+    'UPDATE invites SET revoked = 1, code = NULL, url = NULL WHERE id = ? AND used_at IS NULL'
+  ).run(id).changes === 1;
 }
 
 const normaliseCode = (code) => String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -106,9 +156,14 @@ export function redeemInvite(code, label = null) {
 
     const { deviceId, token } = insertDevice(accountId, label);
 
-    const claimed = db.prepare(
-      'UPDATE invites SET redeemed_at = ?, redeemed_by = ? WHERE code_hash = ? AND redeemed_at IS NULL'
-    ).run(nowIso(), deviceId, codeHash);
+    // Expiry, revocation and single use are all enforced in this one guarded
+    // UPDATE, so none of them can be raced. The plaintext is cleared in the
+    // same statement: once an invite has registered a device it can never
+    // register another, so keeping the code would be storing a spent secret.
+    const claimed = db.prepare(`
+      UPDATE invites SET used_at = ?, device_id = ?, code = NULL, url = NULL
+      WHERE code_hash = ? AND used_at IS NULL AND revoked = 0 AND expires_at > ?
+    `).run(nowIso(), deviceId, codeHash, nowIso());
 
     if (claimed.changes !== 1) {
       db.exec('ROLLBACK');
@@ -206,9 +261,34 @@ export function resetRecovery(accountId) {
 
 export function listDevices(accountId) {
   return db.prepare(`
-    SELECT id, label, created_at, last_seen FROM devices
-    WHERE account_id = ? ORDER BY created_at
+    SELECT id, label, created_at, last_seen, revoked FROM devices
+    WHERE account_id = ? AND revoked = 0 ORDER BY created_at
   `).all(accountId);
+}
+
+/** Every device, for the console. Revoked ones are included so they can be restored. */
+export function listAllDevices() {
+  return db.prepare(`
+    SELECT id, account_id, label, created_at, last_seen, revoked
+    FROM devices ORDER BY created_at DESC
+  `).all().map((d) => ({
+    id: d.id,
+    account_id: d.account_id,
+    label: d.label,
+    created_at: d.created_at,
+    last_seen: d.last_seen,
+    revoked: Boolean(d.revoked)
+  }));
+}
+
+export function setDeviceRevoked(id, revoked) {
+  return db.prepare('UPDATE devices SET revoked = ? WHERE id = ?')
+    .run(revoked ? 1 : 0, id).changes === 1;
+}
+
+export function setDeviceLabel(id, label) {
+  return db.prepare('UPDATE devices SET label = ? WHERE id = ?')
+    .run(String(label).slice(0, 60), id).changes === 1;
 }
 
 /**
@@ -226,6 +306,9 @@ export function deviceForToken(token) {
   if (!token) return null;
   const row = db.prepare('SELECT * FROM devices WHERE token_hash = ?').get(hash(token));
   if (!row) return null;
+  // A revoked device keeps its row so the console can restore it, but must not
+  // authenticate in the meantime.
+  if (row.revoked) return null;
   // A device with no account predates the migration and cannot be scoped
   // safely; refusing it is better than serving another account's history.
   if (!row.account_id) return null;

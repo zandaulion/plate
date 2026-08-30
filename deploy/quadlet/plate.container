@@ -12,6 +12,10 @@ EnvironmentFile=%h/.config/plate/plate.env
 Environment=DATA_DIR=/data
 Environment=PORT=3000
 Environment=BIND_HOST=0.0.0.0
+# PUBLIC_BASE_URL lives in the environment file, not here: it is the one piece
+# of deployment detail that would otherwise put a hostname in a public repo.
+# Without it the invite API returns a code and no link, which the console
+# handles.
 NoNewPrivileges=true
 DropCapability=ALL
 

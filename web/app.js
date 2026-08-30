@@ -1384,7 +1384,24 @@ async function start() {
   await loadDay();
 }
 
+/**
+ * An invite link carries its code in the query string, so the person opening it
+ * does not have to retype anything. Read once and stripped from the address bar
+ * immediately: leaving it there would put a live credential into history, into
+ * any screenshot of the tab, and into whatever the browser syncs.
+ */
+function inviteFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('invite');
+  if (!code) return null;
+  params.delete('invite');
+  const rest = params.toString();
+  history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : ''));
+  return code.trim();
+}
+
 (async () => {
+  const invited = inviteFromUrl();
   try {
     await start();
     $('app').hidden = false;
@@ -1393,6 +1410,14 @@ async function start() {
       showGate();
       $('gate-error').textContent = 'Could not reach the server.';
       $('gate-error').hidden = false;
+      return;
+    }
+    // Arrived from an invite link: fill it in, but do not submit. The person
+    // should see what is about to happen and press the button themselves.
+    if (invited) {
+      setGateMode('invite');
+      $('invite').value = invited;
+      $('gate-hint').textContent = 'Code filled in from your link — press Continue.';
     }
   }
 })();

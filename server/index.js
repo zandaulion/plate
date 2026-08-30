@@ -8,9 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { db, nowIso, PHOTO_DIR } from './db.js';
 import {
   requireDevice, requireAdmin, redeemInvite, setTokenCookie,
-  createInvite, listInvites, COOKIE_NAME,
+  createInvite, listInvites, revokeInvite, COOKIE_NAME,
   createLinkCode, redeemLinkCode, redeemRecovery, resetRecovery,
-  listDevices, revokeDevice, ThrottledError
+  listDevices, revokeDevice, listAllDevices, setDeviceRevoked, setDeviceLabel,
+  ThrottledError
 } from './auth.js';
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
 import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
@@ -584,13 +585,22 @@ app.get('/api/export.zip', requireDevice, (req, res) => {
 
 // ----------------------------------------------------------------- admin
 
+// The shared invite console fronts several apps through one page, so these
+// match the shape the others expose: `detail` on errors, an id per invite, an
+// expiry, and revocation as a reversible flag rather than a delete.
 app.post('/api/admin/invites', requireAdmin, (req, res) => {
-  const code = createInvite(typeof req.body?.label === 'string' ? req.body.label.slice(0, 60) : null);
-  res.status(201).json({ code });
+  res.status(201).json(createInvite(deviceLabel(req.body?.label)));
 });
 
 app.get('/api/admin/invites', requireAdmin, (req, res) => {
-  res.json({ invites: listInvites().map(({ code_hash, ...rest }) => rest) });
+  res.json(listInvites());
+});
+
+app.post('/api/admin/invites/:id/revoke', requireAdmin, (req, res) => {
+  if (!revokeInvite(Number(req.params.id))) {
+    return res.status(404).json({ error: 'not_found', detail: 'No unused invite with that id.' });
+  }
+  res.json({ ok: true });
 });
 
 app.get('/api/admin/accounts', requireAdmin, (req, res) => {
@@ -606,18 +616,34 @@ app.get('/api/admin/accounts', requireAdmin, (req, res) => {
 });
 
 app.get('/api/admin/devices', requireAdmin, (req, res) => {
-  res.json({
-    devices: db.prepare(`
-      SELECT d.id, d.account_id, d.label, d.created_at, d.last_seen
-      FROM devices d ORDER BY d.created_at DESC
-    `).all()
-  });
+  res.json({ devices: listAllDevices() });
 });
 
-/** Revokes one device's access. The account and its history are untouched. */
+app.post('/api/admin/devices/:id/revoke', requireAdmin, (req, res) => {
+  const revoked = req.body?.revoked === true || req.body?.revoked === 1;
+  if (!setDeviceRevoked(req.params.id, revoked)) {
+    return res.status(404).json({ error: 'not_found', detail: 'No device with that id.' });
+  }
+  res.json({ ok: true, revoked });
+});
+
+app.post('/api/admin/devices/:id/label', requireAdmin, (req, res) => {
+  const label = deviceLabel(req.body?.label);
+  if (!label) return res.status(400).json({ error: 'bad_label', detail: 'A label is required.' });
+  if (!setDeviceLabel(req.params.id, label)) {
+    return res.status(404).json({ error: 'not_found', detail: 'No device with that id.' });
+  }
+  res.json({ ok: true, label });
+});
+
+/**
+ * Forgets a device outright. Its history is untouched: entries belong to the
+ * account, so this costs that phone its session and nothing else. Revoking is
+ * the reversible option, and is what the console offers first.
+ */
 app.delete('/api/admin/devices/:id', requireAdmin, (req, res) => {
   const out = db.prepare('DELETE FROM devices WHERE id = ?').run(req.params.id);
-  if (!out.changes) return res.status(404).json({ error: 'not_found' });
+  if (!out.changes) return res.status(404).json({ error: 'not_found', detail: 'No device with that id.' });
   res.json({ ok: true });
 });
 

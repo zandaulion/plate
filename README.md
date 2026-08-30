@@ -113,6 +113,17 @@ was a second person and a cleared cookie was an unreachable history.
 An account holds no name, email, phone or password. Identity is a random id
 and nothing else.
 
+Invites are minted from the shared admin console, which fronts several apps
+through one page on a private listener. An invite carries an id, a seven-day
+expiry and a link; its plaintext code is stored **only while it can still
+register something** and is cleared in the same statement that spends it, so a
+used invite leaves nothing behind. Verification always runs against the hash.
+
+Opening an invite link fills the code into the gate and strips it from the
+address bar immediately — a live credential should not sit in browser history
+or in a screenshot of the tab — but does not submit it. The person sees what is
+about to happen and presses the button.
+
 Three ways in, because a device token is the only credential and it can be lost:
 
 * **Invite code** — creates a new account and its first device.
@@ -123,7 +134,9 @@ Three ways in, because a device token is the only credential and it can be lost:
   someone recovering a lost phone may have to do it again, and burning their
   only route on first use would strand them.
 
-Removing a device ends its access and nothing else — entries belong to the
+Revoking a device from the console is reversible: the row stays so it can be
+restored, and it stops authenticating in the meantime. Removing a device ends
+its access and nothing else — entries belong to the
 account, so a lost phone costs a session, not a log. Deleting the *account* is
 the destructive operation.
 

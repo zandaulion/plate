@@ -204,6 +204,72 @@ addColumnIfMissing('entries', 'portion_source', 'TEXT');
 
 migrateToAccounts();
 
+/**
+ * Widens invites so the shared invite console can front this app.
+ *
+ * The console needs an id to act on, an expiry to display, a revoked flag, and
+ * the invite's own URL so a message can be re-sent. It also expects the
+ * plaintext code to be readable *only while the invite can still register
+ * something* -- so the column exists but is cleared the moment the invite is
+ * used or revoked, and verification still runs against the hash.
+ *
+ * That is deliberately stricter than keeping the plaintext forever: an unused
+ * invite is worth one empty account to whoever reads the database, and a used
+ * one is worth nothing at all.
+ */
+function migrateInvites() {
+  const cols = db.prepare('PRAGMA table_info(invites)').all().map((c) => c.name);
+  if (cols.includes('id')) return false;
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(`
+      CREATE TABLE invites_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_hash   TEXT NOT NULL UNIQUE,
+        code        TEXT,
+        label       TEXT,
+        url         TEXT,
+        created_at  TEXT NOT NULL,
+        expires_at  TEXT NOT NULL,
+        used_at     TEXT,
+        revoked     INTEGER NOT NULL DEFAULT 0,
+        device_id   TEXT REFERENCES devices(id) ON DELETE SET NULL
+      );
+    `);
+
+    // Codes minted before this migration were never stored in plaintext, so
+    // they cannot be re-sent and are given a spent expiry rather than being
+    // presented as usable.
+    for (const row of db.prepare('SELECT * FROM invites').all()) {
+      const created = row.created_at;
+      const expires = new Date(Date.parse(created) + 7 * 86400000).toISOString();
+      db.prepare(`
+        INSERT INTO invites_new (code_hash, code, label, url, created_at, expires_at, used_at, revoked, device_id)
+        VALUES (?, NULL, ?, NULL, ?, ?, ?, 0, ?)
+      `).run(row.code_hash, row.label, created, expires, row.redeemed_at, row.redeemed_by);
+    }
+
+    db.exec('DROP TABLE invites');
+    db.exec('ALTER TABLE invites_new RENAME TO invites');
+    db.exec('COMMIT');
+    console.log('widened invites for the console');
+    return true;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+migrateInvites();
+
+// Revoking a device is reversible now: the console offers restore, and the
+// account model already means a device carries no data of its own.
+addColumnIfMissing('devices', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
+
 db.exec(`
   -- Weight readings, one per row. Kept as a series rather than overwriting
   -- profiles.weight_kg, because the trend is what the expenditure estimate
