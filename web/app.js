@@ -495,7 +495,17 @@ function openReview(mode, entry = null) {
   $('review').hidden = false;
   openScreen('review', teardownReview);
   showRecent();
-  if (mode === 'manual') setTimeout(() => $('food-q').focus(), 120);
+
+  // "Manual" means the user intends to enter it themselves, so both routes to
+  // that -- searching by name and typing the numbers -- are open on arrival
+  // rather than one behind a disclosure.
+  //
+  // Deliberately no autofocus. Focusing the search box raises the keyboard,
+  // which covers the typed-numbers form directly below it -- so the app would
+  // be quietly choosing one of the two routes on the user's behalf, which is
+  // the opposite of what an explicit "Manual" button is for.
+  $('manual-form').hidden = mode !== 'manual';
+  syncManualToggle();
 }
 
 /** Tears the sheet down. Only ever called by the navigation layer. */
@@ -511,7 +521,16 @@ function teardownReview() {
 const closeReview = () => dismissScreen('review');
 $('review-close').addEventListener('click', closeReview);
 $('review').addEventListener('click', (ev) => { if (ev.target === $('review')) closeReview(); });
-$('add-food-btn').addEventListener('click', () => openReview('manual'));
+$('add-manual').addEventListener('click', () => openReview('manual'));
+
+// Barcode is its own way in, not a control inside the sheet: the sheet opens
+// and the scanner starts immediately, so scanning a packet is one tap.
+$('add-barcode').addEventListener('click', async () => {
+  openReview('manual');
+  $('manual-form').hidden = true;
+  syncManualToggle();
+  await startScan();
+});
 
 function initWeightSlider() {
   const grams = totalsOf(state.estimate).grams || 100;
@@ -781,10 +800,17 @@ $('food-results').addEventListener('click', (ev) => {
 
 let manualBasis = 'portion';
 
+/** Keeps the disclosure's own label honest about what it will do next. */
+function syncManualToggle() {
+  const open = !$('manual-form').hidden;
+  $('manual-toggle').textContent = open ? 'Hide these fields' : 'Type in the numbers instead';
+  $('manual-toggle').setAttribute('aria-expanded', String(open));
+}
+
 $('manual-toggle').addEventListener('click', () => {
   const form = $('manual-form');
   form.hidden = !form.hidden;
-  $('manual-toggle').setAttribute('aria-expanded', String(!form.hidden));
+  syncManualToggle();
   if (!form.hidden) {
     // Carry over whatever was being searched for, so switching to typing it
     // in does not mean retyping the name.
@@ -887,7 +913,7 @@ $('m-add').addEventListener('click', () => {
   for (const id of ['m-name', 'm-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs']) $(id).value = '';
   $('manual-warn').hidden = true;
   $('manual-form').hidden = true;
-  $('manual-toggle').setAttribute('aria-expanded', 'false');
+  syncManualToggle();
   $('food-q').value = '';
   $('food-results').innerHTML = '';
 
@@ -911,7 +937,7 @@ async function lookupBarcode(code) {
  * Android). Everywhere else the barcode can still be typed, which is slower
  * but never leaves the user stuck.
  */
-$('scan-btn').addEventListener('click', async () => {
+async function startScan() {
   if (!('BarcodeDetector' in window)) {
     const typed = prompt('Type the barcode number:');
     if (typed) lookupBarcode(typed.trim());
@@ -984,7 +1010,9 @@ $('scan-btn').addEventListener('click', async () => {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
-});
+}
+
+$('scan-btn').addEventListener('click', startScan);
 
 // ------------------------------------------------------------------ save
 

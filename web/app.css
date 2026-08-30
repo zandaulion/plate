@@ -116,7 +116,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 }
 .profile-btn { font-size: 1.1rem; }
 
-.view { max-width: 560px; margin: 0 auto; padding: 18px 16px 120px; }
+.view { max-width: 560px; margin: 0 auto; padding: 18px 16px 132px; }
 
 /* --------------------------------------------------------------- totals */
 
@@ -188,15 +188,30 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 }
 .empty { color: var(--ink-3); text-align: center; padding: 28px 0; }
 
-/* ------------------------------------------------------------------ fab */
+/* -------------------------------------------------------------- actions */
 
-.fab {
-  position: fixed; right: 20px; bottom: max(20px, env(safe-area-inset-bottom));
-  width: 62px; height: 62px; border-radius: 50%; border: 0;
-  background: var(--accent); color: var(--accent-ink);
-  display: grid; place-items: center; box-shadow: var(--shadow); z-index: 6;
+/* A fixed bar rather than floating buttons: three named ways in, all equally
+   reachable, none hidden behind a menu. */
+.actions {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+  display: flex; gap: 8px;
+  max-width: 560px; margin: 0 auto;
+  padding: 8px 12px max(10px, env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--ground) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
 }
-.fab:active { transform: scale(.96); }
+.action {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px 8px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); color: var(--ink-2);
+  font-size: .78rem; font-weight: 600; letter-spacing: .01em;
+}
+.action:active { transform: scale(.97); }
+/* The photo path is the app's reason for existing, so it is the filled one. */
+.action.primary-action {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+}
 
 /* ---------------------------------------------------------------- sheet */
 
@@ -340,18 +355,6 @@ input[type="range"]::-moz-range-thumb {
 }
 @keyframes spin { to { transform: rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s } }
-
-/* ------------------------------------------------ secondary add action */
-
-/* Sits beside the camera rather than inside a menu: adding a food by name is
-   the second-most common action, not an advanced one. */
-.fab-small {
-  position: fixed; right: 94px; bottom: max(26px, calc(env(safe-area-inset-bottom) + 6px));
-  width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink-2);
-  display: grid; place-items: center; box-shadow: var(--shadow); z-index: 6;
-}
-.fab-small:active { transform: scale(.96); }
 
 /* ---------------------------------------------------------- food finder */
 
