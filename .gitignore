@@ -2,3 +2,8 @@ node_modules/
 data/
 .env
 *.log
+
+# Competitive positioning and commercial thinking. This repo is public, and
+# that analysis helps a competitor more than it helps a contributor. It travels
+# to the laptop by another route.
+docs/
