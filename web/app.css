@@ -444,3 +444,11 @@ input[type="range"]::-moz-range-thumb {
 }
 .code-box .hint { margin-top: 10px; }
 .code-box.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+
+
+.export-row { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+/* The download links are buttons, so they need the same box as .secondary
+   without inheriting the anchor's underline and accent colour. */
+.export-row a.secondary {
+  display: block; text-align: center; text-decoration: none; color: var(--ink);
+}

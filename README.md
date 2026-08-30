@@ -211,9 +211,32 @@ something already saved. The weight slider appears only when part of the meal
 came from a photo — for database items the grams were entered deliberately, so
 a proportional rescale would fight the user.
 
+## Export
+
+Three shapes, all free, all complete, none gated:
+
+* **`/api/export.zip`** — `plate.json`, `plate.csv` and every photograph.
+* **`/api/export.csv`** — one row per food, entry columns repeated, so it
+  pivots in a spreadsheet without anyone parsing nested JSON.
+* **`/api/export.json`** — loss-free. Items carry their per-gram rates, so
+  grams x rate reproduces the stored totals exactly and the log can be read
+  back without inference.
+
+Photos are in the archive because an export of a food log that omits the
+pictures is a subset of someone's data, not their data. That needs a container,
+and `server/zip.js` is a store-only ZIP writer rather than a dependency —
+JPEGs do not compress, so the stored form costs nothing, and it is verified in
+the tests with the real `unzip` rather than by reading our own bytes back.
+
+Food names reaching a CSV cell are neutralised if they begin with `=`, `+`, `-`
+or `@`: spreadsheets execute those, and the names come from a model and a
+public database, neither of which is trusted input.
+
 ## Not built yet
 
 * Any history beyond `/api/days`; there is no chart or trend view.
+* Weight history, and the adaptive expenditure estimate it would enable.
+* Health Connect, which is table stakes for an Android release.
 * Offline logging. The shell is cached, but an entry needs the network.
 * Replacing the photo on an existing entry.
 * Recent and favourite foods, which would cut most repeat searches.

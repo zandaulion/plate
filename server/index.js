@@ -15,6 +15,8 @@ import {
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
 import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
 import { summariseRecent } from '../core/foods.js';
+import { toJson, toCsv } from '../core/export.js';
+import { zip } from './zip.js';
 import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
 } from '../core/analysis/estimate.js';
@@ -421,6 +423,80 @@ app.get('/api/photo/:id', requireDevice, (req, res) => {
   res.type(file.endsWith('.png') ? 'image/png' : 'image/jpeg');
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
   fs.createReadStream(file).pipe(res);
+});
+
+// ---------------------------------------------------------------- export
+
+/**
+ * Everything this account has, in one of three shapes.
+ *
+ * Export is what makes the data-sovereignty claim real rather than rhetorical,
+ * so it is unauthenticated by nothing more than the ordinary device token, has
+ * no premium gate, and includes the photographs -- an export of a food log
+ * without its pictures is a subset of someone's data, not their data.
+ */
+function exportPayload(accountId) {
+  const entries = db.prepare(
+    'SELECT * FROM entries WHERE account_id = ? ORDER BY day, created_at'
+  ).all(accountId).map(rowToEntry);
+
+  const account = db.prepare('SELECT created_at FROM accounts WHERE id = ?').get(accountId);
+
+  return {
+    entries,
+    profile: profileFor(accountId),
+    accountCreatedAt: account?.created_at ?? null
+  };
+}
+
+const stamp = () => new Date().toISOString().slice(0, 10);
+
+function attach(res, filename, type) {
+  res.type(type);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+}
+
+app.get('/api/export.json', requireDevice, (req, res) => {
+  attach(res, `plate-${stamp()}.json`, 'application/json');
+  res.send(JSON.stringify(toJson(exportPayload(req.device.account_id)), null, 2));
+});
+
+app.get('/api/export.csv', requireDevice, (req, res) => {
+  attach(res, `plate-${stamp()}.csv`, 'text/csv; charset=utf-8');
+  res.send(toCsv(exportPayload(req.device.account_id)));
+});
+
+app.get('/api/export.zip', requireDevice, (req, res) => {
+  const payload = exportPayload(req.device.account_id);
+  const files = [
+    { name: 'plate.json', data: JSON.stringify(toJson(payload), null, 2) },
+    { name: 'plate.csv', data: toCsv(payload) }
+  ];
+
+  let missing = 0;
+  for (const entry of payload.entries) {
+    if (!entry.photoId) continue;
+    const file = path.join(PHOTO_DIR, path.basename(entry.photoId));
+    try {
+      files.push({ name: `photos/${entry.photoId}`, data: fs.readFileSync(file) });
+    } catch {
+      // A photo missing from disk should not fail the whole export; the JSON
+      // still names it, so the gap is visible rather than silent.
+      missing++;
+    }
+  }
+
+  if (missing) {
+    files.push({
+      name: 'README.txt',
+      data: `${missing} photo file(s) named in plate.json were not found on the server `
+        + 'and are absent from this archive.\n'
+    });
+  }
+
+  attach(res, `plate-${stamp()}.zip`, 'application/zip');
+  res.send(zip(files));
 });
 
 // ----------------------------------------------------------------- admin

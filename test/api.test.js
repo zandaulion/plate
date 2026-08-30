@@ -507,3 +507,107 @@ test('deleting an unknown account is a 404, not a 500', async () => {
   });
   assert.equal(res.status, 404);
 });
+
+// ------------------------------------------------------------------ export
+
+async function seedForExport() {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 82, heightCm: 181, ageYears: 41, sex: 'male', activity: 'light' })
+  });
+  // Stands in for a photo. The server stores the bytes it is given without
+  // decoding them, and only requires enough of them to be a plausible upload,
+  // so the content does not need to be a real image -- but it does need to
+  // clear that length floor, which a 1-pixel PNG does not.
+  const png = Buffer.alloc(400, 0x89).toString('base64');
+  await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-12', meal: 'lunch', portionSource: 'weighed',
+      image: png, mimeType: 'image/png',
+      items: [{ name: 'stew, beef', grams: 300, source: 'photo', per: { calories: 1.2, protein: 0.06, fat: 0.05, carbs: 0.09 } }]
+    })
+  });
+  await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-13',
+      items: [{ name: 'porridge', grams: 250, source: 'manual', per: { calories: 0.71, protein: 0.025, fat: 0.014, carbs: 0.12 } }]
+    })
+  });
+  return auth;
+}
+
+test('export requires a device', async () => {
+  for (const p of ['/api/export.json', '/api/export.csv', '/api/export.zip']) {
+    assert.equal((await api(p)).status, 401, p);
+  }
+});
+
+test('JSON export contains the whole account and is offered as a download', async () => {
+  const auth = await seedForExport();
+  const res = await api('/api/export.json', { headers: auth });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /attachment; filename="plate-\d{4}-\d{2}-\d{2}\.json"/);
+
+  const body = await res.json();
+  assert.equal(body.entryCount, 2);
+  assert.equal(body.profile.weightKg, 82);
+  assert.equal(body.entries[0].portionSource, 'weighed');
+  assert.equal(body.photos.length, 1);
+  // Round-trippable: rate x grams reproduces the stored total.
+  const item = body.entries[0].items[0];
+  assert.equal(Math.round(item.per.calories * item.grams), 360);
+});
+
+test('CSV export is a row per food', async () => {
+  const auth = await seedForExport();
+  const res = await api('/api/export.csv', { headers: auth });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/csv/);
+
+  const lines = (await res.text()).trim().split('\n');
+  assert.equal(lines.length, 3, 'header plus two foods');
+  assert.match(lines[1], /"stew, beef"/, 'a comma in a name must be quoted');
+});
+
+test('an export only ever contains its own account', async () => {
+  const mine = await seedForExport();
+  const theirs = await registerDevice();
+
+  const empty = await (await api('/api/export.json', { headers: theirs.auth })).json();
+  assert.equal(empty.entryCount, 0, 'a different account sees nothing of mine');
+  assert.equal(empty.profile, null);
+});
+
+test('the ZIP export is a valid archive containing the data and the photos', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const auth = await seedForExport();
+
+  const res = await api('/api/export.zip', { headers: auth });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+
+  const file = path.join(process.env.DATA_DIR, 'export-test.zip');
+  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+
+  // Checked with the real unzip rather than by reading our own bytes back:
+  // a hand-written container that only our own reader accepts is not an export.
+  const listing = execFileSync('unzip', ['-l', file], { encoding: 'utf8' });
+  assert.match(listing, /plate\.json/);
+  assert.match(listing, /plate\.csv/);
+  assert.match(listing, /photos\//, 'the photograph must be in the archive');
+
+  const verify = execFileSync('unzip', ['-t', file], { encoding: 'utf8' });
+  assert.match(verify, /No errors detected/, 'CRCs must be correct');
+
+  const json = JSON.parse(execFileSync('unzip', ['-p', file, 'plate.json'], { encoding: 'utf8' }));
+  assert.equal(json.entryCount, 2);
+  assert.equal(json.photos.length, 1);
+
+  // Every photo the JSON names is present in the archive.
+  for (const photo of json.photos) {
+    assert.match(listing, new RegExp(photo.replace(/[.]/g, '\\.')), `${photo} missing from archive`);
+  }
+});
