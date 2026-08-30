@@ -6,7 +6,7 @@
 
 import {
   totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
-  addManualItem, hasPhotoItems
+  addManualItem, hasPhotoItems, markWeighed, portionSourceOf
 } from '/core/analysis/estimate.js';
 import { toItem } from '/core/foods.js';
 import { localDayKey } from '/core/day.js';
@@ -238,7 +238,10 @@ function renderEntries(entries) {
         <div class="entry-foods">${esc(foods) || 'Meal'}</div>
         <div class="entry-meta">
           <span>${e.meal ? esc(e.meal) : time}</span>
-          ${e.portionConfirmed ? '' : '<span class="badge-est">not checked</span>'}
+          ${e.portionSource === 'weighed'
+            ? '<span class="badge-est badge-weighed">weighed</span>'
+            : e.portionSource === 'estimated' ? ''
+            : '<span class="badge-est">weight not set</span>'}
         </div>
       </div>
       <div>
@@ -385,7 +388,12 @@ function openReview(mode, entry = null) {
   state.existingPhotoId = entry?.photoId || null;
   state.photo = null;
   state.estimate = entry
-    ? { items: entry.items, portionConfirmed: entry.portionConfirmed, note: entry.note || '' }
+    ? {
+        items: entry.items,
+        portionSource: portionSourceOf(entry),
+        portionConfirmed: entry.portionConfirmed,
+        note: entry.note || ''
+      }
     : null;
   state.meal = entry?.meal || guessMeal();
 
@@ -424,6 +432,7 @@ function openReview(mode, entry = null) {
 
   $('review').hidden = false;
   openScreen('review', teardownReview);
+  showRecent();
   if (mode === 'manual') setTimeout(() => $('food-q').focus(), 120);
 }
 
@@ -470,9 +479,23 @@ function renderReview() {
   $('review-kcal').textContent = Math.round(totals.calories);
 
   if (photoBased) {
+    const source = portionSourceOf(est);
+    const tail = {
+      model: ' \u2014 set the weight if you know it',
+      estimated: ' \u2014 from your estimate of the weight',
+      weighed: ' \u2014 from a weighed portion'
+    }[source];
     $('review-range').textContent =
-      `Likely ${ranges.calories.low}\u2013${ranges.calories.high} kcal`
-      + (est.portionConfirmed ? '' : ' \u2014 narrows once you check the weight');
+      `Likely ${ranges.calories.low}\u2013${ranges.calories.high} kcal${tail}`;
+
+    $('weighed').checked = source === 'weighed';
+    // Stated plainly, because the measurement does not support "always
+    // adjust": a guess worse than about 30% is no better than leaving the
+    // model's own estimate alone.
+    $('weight-hint').textContent = source === 'weighed'
+      ? 'Weighed portions are roughly twice as accurate as an eyeballed one.'
+      : 'Only worth changing if you have a better idea than the photo does — '
+        + 'a rough guess is no more accurate than leaving it.';
   } else {
     $('review-range').textContent = totals.calories
       ? 'From the food database \u2014 exact for the weights you entered.'
@@ -522,6 +545,12 @@ $('total-weight').addEventListener('input', (ev) => {
   renderReview();
 });
 
+$('weighed').addEventListener('change', (ev) => {
+  if (!state.estimate) return;
+  state.estimate = markWeighed(state.estimate, ev.target.checked);
+  renderReview();
+});
+
 $('review-items').addEventListener('click', (ev) => {
   const li = ev.target.closest('.item');
   if (!li || !state.estimate) return;
@@ -555,14 +584,51 @@ $('review-items').addEventListener('change', (ev) => {
 let searchTimer = null;
 let searchSeq = 0;
 
+const SOURCE_LABEL = { usda: 'USDA', openfoodfacts: 'OFF', recent: 'again' };
+
 function renderResults(results) {
-  $('food-results').innerHTML = results.map((f, i) => `
+  $('food-results').innerHTML = results.map((f, i) => {
+    const meta = f.source === 'recent'
+      ? `${f.grams} g · ${Math.round((f.per?.calories || 0) * f.grams)} kcal`
+        + (f.uses > 1 ? ` · logged ${f.uses}×` : '')
+      : `${Math.round(f.per100.calories)} kcal / 100 g`;
+    return `
     <li><button class="result" type="button" data-i="${i}">
-      <span class="result-name">${esc(f.name)}<span class="src">${esc(f.source === 'usda' ? 'USDA' : 'OFF')}</span></span>
-      <span class="result-meta">${Math.round(f.per100.calories)} kcal / 100 g</span>
+      <span class="result-name">${esc(f.name)}<span class="src">${esc(SOURCE_LABEL[f.source] || f.source)}</span></span>
+      <span class="result-meta">${esc(meta)}</span>
       <span class="result-add" aria-hidden="true">+</span>
-    </button></li>`).join('');
+    </button></li>`;
+  }).join('');
   $('food-results').dataset.payload = JSON.stringify(results);
+}
+
+/**
+ * Foods logged before, offered before the user types anything.
+ *
+ * Most meals repeat, so the common case should cost one tap rather than a
+ * search. Rendered into the same list as search results so the two behave
+ * identically when tapped.
+ */
+async function showRecent() {
+  const seq = ++searchSeq;
+  try {
+    const { recent } = await api('/api/foods/recent');
+    if (seq !== searchSeq || $('food-q').value.trim()) return;
+    if (!recent.length) return;
+
+    renderResults(recent.map((f) => ({
+      name: f.name,
+      source: 'recent',
+      per100: null,
+      // Recents carry per-gram rates already, and the weight last used.
+      per: f.per,
+      grams: f.grams,
+      uses: f.uses
+    })));
+    $('finder-hint').textContent = 'Recently logged — tap to add again.';
+  } catch {
+    // A failed recents fetch is not worth a message: the search box works.
+  }
 }
 
 async function runSearch(query) {
@@ -591,9 +657,14 @@ $('food-q').addEventListener('input', (ev) => {
   if (query.length < 2) {
     $('food-results').innerHTML = '';
     $('finder-hint').textContent = '';
+    if (!query) showRecent();
     return;
   }
   searchTimer = setTimeout(() => runSearch(query), 350);
+});
+
+$('food-q').addEventListener('focus', () => {
+  if (!$('food-q').value.trim()) showRecent();
 });
 
 /**
@@ -605,11 +676,23 @@ $('food-q').addEventListener('input', (ev) => {
  * user already knows instead of a modal that interrupts the flow.
  */
 function addFood(food) {
-  const item = toItem(food, food.servingG || 100);
-  if (!item) return;
+  const base = state.estimate || { items: [], portionSource: 'model', note: '' };
 
-  state.estimate = addManualItem(
-    state.estimate || { items: [], portionConfirmed: false, note: '' }, item);
+  if (food.source === 'recent') {
+    // Already per-gram, at the weight last used, so it is added directly
+    // rather than round-tripped through the per-100 g form.
+    state.estimate = {
+      ...base,
+      items: [...base.items, {
+        id: `re${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        name: food.name, grams: food.grams, per: food.per, source: 'manual'
+      }]
+    };
+  } else {
+    const item = toItem(food, food.servingG || 100);
+    if (!item) return;
+    state.estimate = addManualItem(base, item);
+  }
 
   $('food-q').value = '';
   $('food-results').innerHTML = '';
@@ -734,6 +817,7 @@ $('save-entry').addEventListener('click', async () => {
   const body = {
     meal: state.meal,
     items: state.estimate.items,
+    portionSource: portionSourceOf(state.estimate),
     portionConfirmed: state.estimate.portionConfirmed,
     note: state.estimate.note || null
   };

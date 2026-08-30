@@ -189,3 +189,65 @@ export function toItem(food, grams) {
   if (!food || !Number.isFinite(g) || g <= 0) return null;
   return { name: food.name, grams: g, per100: food.per100 };
 }
+
+/**
+ * Collapses recently logged items into a short list of foods worth offering
+ * again.
+ *
+ * Eating is repetitive -- the same breakfast, the same yoghurt -- so without
+ * this every repeat meal costs a fresh search. Input is one row per logged
+ * item, newest first: { item, loggedAt }.
+ *
+ * Ranking blends how often a food is eaten with how recently, so a daily
+ * staple outranks last Tuesday's restaurant dish even when the dish is newer.
+ * That is what makes a separate "favourites" feature unnecessary: the foods
+ * someone would star are exactly the ones they log most.
+ */
+export function summariseRecent(rows, { now = Date.now(), limit = 12 } = {}) {
+  const byName = new Map();
+
+  for (const row of rows || []) {
+    const item = row?.item;
+    const name = String(item?.name || '').trim();
+    const grams = Number(item?.grams);
+    if (!name || !Number.isFinite(grams) || grams <= 0) continue;
+
+    const key = name.toLowerCase();
+    const loggedAt = Date.parse(row.loggedAt);
+    const existing = byName.get(key);
+
+    if (!existing) {
+      byName.set(key, {
+        name,
+        // The newest occurrence supplies the rates and the default weight:
+        // if a food was corrected last time, that correction is the better
+        // starting point than an older one.
+        per: item.per || null,
+        grams: Math.round(grams),
+        uses: 1,
+        lastUsed: Number.isFinite(loggedAt) ? loggedAt : 0
+      });
+      continue;
+    }
+
+    existing.uses += 1;
+    if (Number.isFinite(loggedAt) && loggedAt > existing.lastUsed) {
+      existing.lastUsed = loggedAt;
+      existing.per = item.per || existing.per;
+      existing.grams = Math.round(grams);
+    }
+  }
+
+  const DAY = 86400000;
+  const scored = [...byName.values()]
+    .filter((f) => f.per)
+    .map((f) => {
+      const ageDays = Math.max(0, (now - f.lastUsed) / DAY);
+      // Halving every fortnight: recent enough to stay current, slow enough
+      // that a weekday staple survives a weekend away.
+      return { ...f, score: f.uses * Math.pow(0.5, ageDays / 14) };
+    });
+
+  scored.sort((a, b) => b.score - a.score || b.lastUsed - a.lastUsed);
+  return scored.slice(0, limit).map(({ score, ...rest }) => rest);
+}

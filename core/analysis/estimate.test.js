@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fromModelResponse, totalsOf, rangesOf, setItemGrams, setTotalGrams,
-  removeItem, addManualItem, itemMacros, ERROR_BANDS, hasPhotoItems
+  removeItem, addManualItem, itemMacros, ERROR_BANDS, hasPhotoItems,
+  markWeighed, portionSourceOf
 } from './estimate.js';
 
 const RESPONSE = {
@@ -50,28 +51,61 @@ test('correcting the total weight distributes proportionally', () => {
   assert.equal(totalsOf(after).calories, 254, 'nutrition halves with the weight');
 });
 
-test('any portion edit marks the estimate as corrected', () => {
+test('any portion edit records a user estimate, never a weighing', () => {
   const e = fromModelResponse(RESPONSE);
-  assert.equal(setTotalGrams(e, 400).portionConfirmed, true);
-  assert.equal(setItemGrams(e, e.items[0].id, 10).portionConfirmed, true);
+  assert.equal(portionSourceOf(e), 'model');
+  // The app cannot tell a glance from a scale, so an edit must claim the
+  // weaker of the two.
+  assert.equal(portionSourceOf(setTotalGrams(e, 400)), 'estimated');
+  assert.equal(portionSourceOf(setItemGrams(e, e.items[0].id, 10)), 'estimated');
 });
 
-test('the range narrows once the portion is confirmed', () => {
+test('a declared weighing survives later nudges', () => {
+  const weighed = markWeighed(fromModelResponse(RESPONSE));
+  assert.equal(portionSourceOf(weighed), 'weighed');
+  assert.equal(portionSourceOf(setTotalGrams(weighed, 400)), 'weighed',
+    'someone who weighed the plate then adjusted is still working from a scale');
+  assert.equal(portionSourceOf(markWeighed(weighed, false)), 'estimated');
+});
+
+test('the range narrows in three measured steps', () => {
   const raw = fromModelResponse(RESPONSE);
-  const corrected = setTotalGrams(raw, 350); // same weight, but now confirmed
+  const estimated = setTotalGrams(raw, 350);   // same weight, now user-set
+  const weighed = markWeighed(estimated);
 
-  const width = (r) => (r.calories.high - r.calories.low) / r.calories.value;
-  assert.ok(width(rangesOf(corrected)) < width(rangesOf(raw)),
-    'confirming the weight must visibly tighten the estimate');
+  const width = (e) => {
+    const r = rangesOf(e);
+    return (r.calories.high - r.calories.low) / r.calories.value;
+  };
+  assert.ok(width(raw) > width(estimated), 'a user estimate beats the model guess');
+  assert.ok(width(estimated) > width(weighed), 'a scale beats a user estimate');
 
-  assert.equal(rangesOf(raw).calories.low, Math.round(508 * (1 - ERROR_BANDS.raw.calories)));
+  assert.equal(rangesOf(raw).calories.low, Math.round(508 * (1 - ERROR_BANDS.model.calories)));
+  assert.equal(rangesOf(estimated).calories.low, Math.round(508 * (1 - ERROR_BANDS.estimated.calories)));
+});
+
+test('an eyeballed correction does not claim a scale accuracy', () => {
+  // The bug this replaced: any slider touch reported the 16% weighed band.
+  const estimated = setTotalGrams(fromModelResponse(RESPONSE), 350);
+  assert.notEqual(rangesOf(estimated).calories.low,
+    Math.round(508 * (1 - ERROR_BANDS.weighed.calories)));
+  assert.ok(ERROR_BANDS.estimated.calories > ERROR_BANDS.weighed.calories);
+});
+
+test('entries saved before portionSource existed are read conservatively', () => {
+  // Legacy rows carry only a boolean, which cannot distinguish the two.
+  assert.equal(portionSourceOf({ items: [], portionConfirmed: true }), 'estimated');
+  assert.equal(portionSourceOf({ items: [], portionConfirmed: false }), 'model');
+  assert.equal(portionSourceOf({ items: [], portionSource: 'nonsense' }), 'model');
 });
 
 test('fat is always carried at lower confidence than calories', () => {
   const r = rangesOf(fromModelResponse(RESPONSE));
   assert.equal(r.fat.confidence, 'low');
   assert.equal(r.calories.confidence, 'medium');
-  assert.ok(ERROR_BANDS.corrected.fat > ERROR_BANDS.corrected.calories);
+  for (const level of ['model', 'estimated', 'weighed']) {
+    assert.ok(ERROR_BANDS[level].fat > ERROR_BANDS[level].calories, level);
+  }
 });
 
 test('items with no weight are dropped, not kept at zero', () => {
@@ -143,8 +177,8 @@ test('a mixed meal bands only the photographed part', () => {
   const r = rangesOf(mixed);
   assert.equal(r.calories.value, 708);
   // The 200 exact kcal sit outside the band; only the 508 are widened.
-  assert.equal(r.calories.low, Math.round(200 + 508 * (1 - ERROR_BANDS.raw.calories)));
-  assert.equal(r.calories.high, Math.round(200 + 508 * (1 + ERROR_BANDS.raw.calories)));
+  assert.equal(r.calories.low, Math.round(200 + 508 * (1 - ERROR_BANDS.model.calories)));
+  assert.equal(r.calories.high, Math.round(200 + 508 * (1 + ERROR_BANDS.model.calories)));
 });
 
 test('hasPhotoItems distinguishes the two kinds of estimate', () => {

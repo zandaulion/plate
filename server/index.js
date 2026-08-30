@@ -12,7 +12,10 @@ import {
 } from './auth.js';
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
 import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
-import { fromModelResponse, totalsOf, rangesOf } from '../core/analysis/estimate.js';
+import { summariseRecent } from '../core/foods.js';
+import {
+  fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
+} from '../core/analysis/estimate.js';
 import { parseResponse } from '../core/analysis/prompt.js';
 import { maintenanceEnergy, ACTIVITY_LEVELS } from '../core/nutrition.js';
 import { summariseDay, macroSplit, MEALS } from '../core/day.js';
@@ -165,6 +168,36 @@ app.get('/api/foods/barcode/:code', requireDevice, asyncRoute(async (req, res) =
   res.json({ food: await lookupBarcode(req.params.code) });
 }));
 
+/**
+ * Foods this device has logged before, ready to add again.
+ *
+ * Read from the entries themselves rather than a separate table: the list is
+ * always in step with what was actually eaten, and there is no second store to
+ * keep consistent when an entry is edited or deleted.
+ */
+app.get('/api/foods/recent', requireDevice, (req, res) => {
+  // 400 items is several weeks of ordinary logging, and bounds the work
+  // regardless of how long the history grows.
+  const rows = db.prepare(`
+    SELECT je.value AS item_json, e.created_at
+    FROM entries e, json_each(e.items_json) je
+    WHERE e.device_id = ?
+    ORDER BY e.created_at DESC
+    LIMIT 400
+  `).all(req.device.id);
+
+  const parsed = [];
+  for (const row of rows) {
+    try {
+      parsed.push({ item: JSON.parse(row.item_json), loggedAt: row.created_at });
+    } catch {
+      // A row we cannot read is skipped rather than failing the list.
+    }
+  }
+
+  res.json({ recent: summariseRecent(parsed) });
+});
+
 app.get('/api/foods/search', requireDevice, asyncRoute(async (req, res) => {
   res.json({
     results: await searchFoods(req.query.q),
@@ -191,21 +224,25 @@ app.post('/api/entries', requireDevice, (req, res) => {
   const items = Array.isArray(b.items) ? b.items : [];
   if (!items.length) return res.status(400).json({ error: 'no_items', message: 'An entry needs at least one food.' });
 
-  const estimate = { items, portionConfirmed: Boolean(b.portionConfirmed) };
+  const portionSource = PORTION_SOURCES.includes(b.portionSource)
+    ? b.portionSource
+    : portionSourceOf({ portionConfirmed: b.portionConfirmed });
+  const estimate = { items, portionSource };
   const totals = totalsOf(estimate);
 
   const id = crypto.randomUUID();
   const photoId = savePhoto(b.image, b.mimeType);
 
   db.prepare(`
-    INSERT INTO entries (id, device_id, day, meal, created_at, photo_id, note, portion_confirmed, items_json, totals_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO entries (id, device_id, day, meal, created_at, photo_id, note,
+                         portion_confirmed, portion_source, items_json, totals_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, req.device.id, day,
     MEALS.includes(b.meal) ? b.meal : null,
     nowIso(), photoId,
     typeof b.note === 'string' ? b.note.slice(0, 500) : null,
-    estimate.portionConfirmed ? 1 : 0,
+    portionSource === 'model' ? 0 : 1, portionSource,
     JSON.stringify(items), JSON.stringify(totals)
   );
 
@@ -217,6 +254,9 @@ function rowToEntry(row) {
     id: row.id, day: row.day, meal: row.meal, createdAt: row.created_at,
     photoId: row.photo_id, note: row.note,
     portionConfirmed: Boolean(row.portion_confirmed),
+    portionSource: portionSourceOf({
+      portionSource: row.portion_source, portionConfirmed: row.portion_confirmed
+    }),
     items: JSON.parse(row.items_json),
     totals: JSON.parse(row.totals_json)
   };
@@ -267,13 +307,18 @@ app.put('/api/entries/:id', requireDevice, (req, res) => {
   }
 
   const totals = totalsOf({ items });
+  const portionSource = PORTION_SOURCES.includes(b.portionSource)
+    ? b.portionSource
+    : portionSourceOf({ portionConfirmed: b.portionConfirmed });
+
   db.prepare(`
-    UPDATE entries SET meal = ?, note = ?, portion_confirmed = ?, items_json = ?, totals_json = ?
+    UPDATE entries SET meal = ?, note = ?, portion_confirmed = ?, portion_source = ?,
+                       items_json = ?, totals_json = ?
     WHERE id = ?
   `).run(
     MEALS.includes(b.meal) ? b.meal : null,
     typeof b.note === 'string' ? b.note.slice(0, 500) : null,
-    b.portionConfirmed ? 1 : 0,
+    portionSource === 'model' ? 0 : 1, portionSource,
     JSON.stringify(items), JSON.stringify(totals), row.id
   );
 

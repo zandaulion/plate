@@ -319,7 +319,9 @@ input[type="range"]::-moz-range-thumb {
 
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px));
+  /* Top, not bottom: at the bottom it covered the meal chips and the save
+     button -- the two controls you reach for immediately after adding a food. */
+  top: max(14px, calc(env(safe-area-inset-top) + 10px));
   background: var(--ink); color: var(--ground);
   padding: 11px 18px; border-radius: 99px; font-size: .9rem; z-index: 40;
   box-shadow: var(--shadow); max-width: 90vw; text-align: center;
@@ -383,3 +385,14 @@ input[type="range"]::-moz-range-thumb {
   position: fixed; inset: 0; z-index: 60;
   width: 100%; height: 100%; object-fit: cover; background: #000;
 }
+
+
+/* The weighed declaration. Small, because most meals will not be weighed and
+   the control should not nag. */
+.weighed-row {
+  display: flex; align-items: center; gap: 9px;
+  margin: 10px 0 2px; font-size: .88rem; font-weight: 600;
+}
+.weighed-row input { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); }
+
+.badge-est.badge-weighed { color: var(--accent); }

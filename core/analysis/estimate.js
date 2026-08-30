@@ -3,9 +3,12 @@
 // Shaped directly by the measurement run of 30 Aug 2026 (145 weighed plates,
 // gemini-3.7-flash, see the macro-probe harness):
 //
-//   * Portion is the dominant error term. Correcting the plate weight took
-//     median calorie error from 30% to 16% and the share of plates within 25%
-//     of truth from 44% to 66%. Nothing else came close.
+//   * Portion is the dominant error term. A weighed plate took median calorie
+//     error from 30% to 16%, and the share within 25% of truth from 44% to
+//     66%. Nothing else came close. But a follow-up run showed the benefit
+//     depends on how the weight was obtained: an eyeballed correction recovers
+//     about half of that, and a guess worse than +/-30% is no better than
+//     leaving the model's own estimate alone. See ERROR_BANDS.
 //   * Grounding the per-gram nutrition in a food database changed nothing
 //     (34.8% -> 34.0% MAPE), because the model already knows what rice
 //     contains. So the model's own per-gram figures are kept, and the editing
@@ -21,15 +24,45 @@
 const NUTRIENTS = ['calories', 'protein', 'fat', 'carbs'];
 
 /**
- * Median absolute percentage error, from the run above. Used to draw the
- * range shown next to every number. `corrected` applies once the user has
- * confirmed or changed the weight; the band genuinely narrows, so the UI
- * rewards the correction with a visibly tighter estimate.
+ * Median absolute percentage error, measured. Used to draw the range shown
+ * next to every number.
+ *
+ * Three levels, not two, because a follow-up run (30 Aug 2026, same 145
+ * plates, with the user's weight simulated at a range of error levels) showed
+ * that *how* the weight was arrived at matters as much as whether it was
+ * corrected at all:
+ *
+ *   weight source          kcal median   within 25%
+ *   model's own guess          30.0%        44%
+ *   user guessed, +/-20%       22.6%        54%
+ *   user guessed, +/-30%       28.4%        45%   <- barely better than none
+ *   user guessed, +/-40%       34.0%        38%   <- worse than none
+ *   weighed on a scale         16.0%        66%
+ *
+ * So correcting by eye helps, but only about half as much as a scale, and it
+ * stops helping once the guess is worse than about 30%. Reporting a 16% band
+ * for an eyeballed adjustment -- as this originally did -- claims an accuracy
+ * only a scale delivers.
  */
 export const ERROR_BANDS = {
-  raw:       { calories: 0.30, protein: 0.25, carbs: 0.28, fat: 0.42 },
-  corrected: { calories: 0.16, protein: 0.15, carbs: 0.16, fat: 0.33 }
+  model:     { calories: 0.30, protein: 0.25, carbs: 0.28, fat: 0.42 },
+  estimated: { calories: 0.23, protein: 0.23, carbs: 0.23, fat: 0.36 },
+  weighed:   { calories: 0.16, protein: 0.15, carbs: 0.16, fat: 0.33 }
 };
+
+/** How the weight in this estimate was arrived at. */
+export const PORTION_SOURCES = ['model', 'estimated', 'weighed'];
+
+/**
+ * Reads the portion source, tolerating entries saved before this existed.
+ * Those carry only a boolean, and a boolean cannot tell an eyeballed
+ * adjustment from a weighed one -- the conservative reading is the former.
+ */
+export function portionSourceOf(estimate) {
+  const declared = estimate?.portionSource;
+  if (PORTION_SOURCES.includes(declared)) return declared;
+  return estimate?.portionConfirmed ? 'estimated' : 'model';
+}
 
 export const CONFIDENCE = { calories: 'medium', protein: 'medium', carbs: 'medium', fat: 'low' };
 
@@ -73,6 +106,7 @@ export function fromModelResponse(raw) {
 
   return {
     items,
+    portionSource: 'model',
     portionConfirmed: false,
     note: typeof raw?.note === 'string' ? raw.note.trim() : ''
   };
@@ -103,9 +137,10 @@ export function totalsOf(estimate) {
 }
 
 /**
- * Ranges to display. Once the portion has been confirmed the band tightens,
- * because the measurement says the estimate really is better -- this is not a
- * cosmetic reward.
+ * Ranges to display. The band tightens as the weight becomes better known --
+ * model guess, then user estimate, then scale -- because the measurement says
+ * the estimate really is better at each step. It is not a cosmetic reward, and
+ * it deliberately does not jump straight to the tightest band on any edit.
  *
  * The band applies only to the part of the meal a model read off a photograph.
  * A barcode or database item carries exact per-gram nutrition, so its only
@@ -115,7 +150,7 @@ export function totalsOf(estimate) {
  */
 export function rangesOf(estimate) {
   const items = estimate?.items || [];
-  const band = estimate?.portionConfirmed ? ERROR_BANDS.corrected : ERROR_BANDS.raw;
+  const band = ERROR_BANDS[portionSourceOf(estimate)] || ERROR_BANDS.model;
 
   const photo = { calories: 0, protein: 0, fat: 0, carbs: 0 };
   const exact = { calories: 0, protein: 0, fat: 0, carbs: 0 };
@@ -144,12 +179,35 @@ export function hasPhotoItems(estimate) {
   return (estimate?.items || []).some((i) => i.source === 'photo');
 }
 
-/** Change one item's weight. Marks the portion as user-confirmed. */
+/**
+ * Records that the user has set the weight themselves.
+ *
+ * An edit is treated as an eyeballed estimate, never as a weighing: the app
+ * cannot tell the difference, and assuming the better of the two would report
+ * a scale's accuracy for a glance. `markWeighed` is the explicit upgrade, and
+ * a weighing survives further nudges -- someone who weighed the plate and then
+ * adjusted an item is still working from a scale.
+ */
+function withUserPortion(estimate) {
+  return portionSourceOf(estimate) === 'weighed' ? 'weighed' : 'estimated';
+}
+
+/** Declare how the weight was arrived at. */
+export function markWeighed(estimate, weighed = true) {
+  return {
+    ...estimate,
+    portionSource: weighed ? 'weighed' : 'estimated',
+    portionConfirmed: true
+  };
+}
+
+/** Change one item's weight. */
 export function setItemGrams(estimate, itemId, grams) {
   const g = Number(grams);
   if (!Number.isFinite(g) || g < 0) return estimate;
   return {
     ...estimate,
+    portionSource: withUserPortion(estimate),
     portionConfirmed: true,
     items: estimate.items.map((it) => (it.id === itemId ? { ...it, grams: round(g, 0) } : it))
   };
@@ -174,6 +232,7 @@ export function setTotalGrams(estimate, totalGrams) {
   const k = target / current;
   return {
     ...estimate,
+    portionSource: withUserPortion(estimate),
     portionConfirmed: true,
     items: estimate.items.map((it) => ({ ...it, grams: round(it.grams * k, 0) }))
   };

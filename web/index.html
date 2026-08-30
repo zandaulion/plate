@@ -87,8 +87,11 @@
             <output id="weight-out" for="total-weight">0 g</output>
           </div>
           <input id="total-weight" type="range" min="20" max="1500" step="10" value="300">
-          <p class="hint" id="weight-hint">Drag to match what you actually ate. This is the single
-            biggest thing you can correct.</p>
+          <label class="weighed-row">
+            <input id="weighed" type="checkbox">
+            <span>I weighed it, or the packet said</span>
+          </label>
+          <p class="hint" id="weight-hint"></p>
         </section>
 
         <!-- Sits directly under the weight control, not below the item list:

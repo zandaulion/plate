@@ -6,15 +6,31 @@ A calorie and macro log whose primary input is a photo. The model reads the
 plate; the person who ate it corrects the weight. That division of labour is
 not a convenience — it is the finding the whole design rests on.
 
-## Why the portion control is the main interaction
+## Why the portion control is the main interaction — and its limit
 
 Measured on **145 plates from Nutrition5k**, where every ingredient was weighed
 on a scale before the photo was taken (`gemini-3.7-flash`, 30 Aug 2026):
 
-| | Median calorie error | Plates within 25% |
+| Weight source | Median calorie error | Plates within 25% |
 |---|---|---|
-| Model estimates everything | 30.0% | 44% |
-| Weight corrected by the user | 16.0% | 66% |
+| Model's own guess | 30.0% | 44% |
+| User guessed, ±10% | 17.8% | 63% |
+| User guessed, ±20% | 22.6% | 54% |
+| User guessed, ±30% | 28.4% | 45% |
+| User guessed, ±40% | 34.0% | 38% |
+| Weighed on a scale | 16.0% | 66% |
+
+The first run only compared the top and bottom rows, which made the portion
+control look better than it is. The middle rows are the honest picture:
+**correcting by eye recovers about half of what a scale does, and stops helping
+once the guess is worse than about ±30%.** Past ±40% it is actively worse than
+leaving the model's estimate alone — the model's own weight guess has a median
+error of 20.5%, and a user has to beat that to add anything.
+
+This is why the app asks *how* the weight was arrived at rather than merely
+whether it was changed, why the three `ERROR_BANDS` levels exist, and why the
+weight control's wording says "only worth changing if you have a better idea
+than the photo does" instead of urging every user to adjust every meal.
 
 Two other results shaped the code:
 
@@ -103,6 +119,18 @@ secrets from an environment file outside this repo.
 
 Bump `CACHE_NAME` in `web/sw.js` on every shell change, or installed clients
 keep serving the old build.
+
+## Recent foods
+
+Eating repeats, so the finder offers previously logged foods before anything is
+typed, at the weight last used. Ranking blends how often a food is eaten with
+how recently — halving every fortnight — so a weekday staple outranks last
+night's restaurant dish even though the dish is newer. That is deliberately
+instead of a favourites feature: the foods someone would star are the ones they
+already log most.
+
+The list is derived from `entries` rather than a separate table, so it cannot
+fall out of step with what was actually eaten.
 
 ## Adding food without a photo
 

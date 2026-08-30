@@ -78,4 +78,8 @@ export function addColumnIfMissing(table, column, decl) {
   return true;
 }
 
+// Added after the follow-up measurement showed that *how* a weight was
+// arrived at changes its accuracy band, which a boolean cannot express.
+addColumnIfMissing('entries', 'portion_source', 'TEXT');
+
 export const nowIso = () => new Date().toISOString();

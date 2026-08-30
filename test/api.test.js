@@ -270,3 +270,47 @@ test('an edit that empties the entry is refused', async () => {
   });
   assert.equal(res.status, 400);
 });
+
+test('how the weight was arrived at is stored and returned', async () => {
+  const { auth } = await registerDevice();
+  const item = { name: 'stew', grams: 300, per: { calories: 1.2, protein: 0.06, fat: 0.05, carbs: 0.09 }, source: 'photo' };
+
+  const cases = [
+    [{ portionSource: 'weighed' }, 'weighed'],
+    [{ portionSource: 'estimated' }, 'estimated'],
+    [{}, 'model'],
+    // Entries from a client that only knows the old boolean.
+    [{ portionConfirmed: true }, 'estimated'],
+    // A value we do not recognise must not be trusted through to storage.
+    [{ portionSource: 'weighed-ish' }, 'model']
+  ];
+
+  for (const [extra, expected] of cases) {
+    const created = await (await api('/api/entries', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ day: '2026-08-20', items: [item], ...extra })
+    })).json();
+    assert.ok(created.id, JSON.stringify(extra));
+  }
+
+  const day = await (await api('/api/entries?day=2026-08-20', { headers: auth })).json();
+  assert.deepEqual(day.entries.map((e) => e.portionSource), cases.map((c) => c[1]));
+});
+
+test('editing can upgrade an entry to weighed', async () => {
+  const { auth } = await registerDevice();
+  const item = { name: 'porridge', grams: 250, per: { calories: 0.7, protein: 0.02, fat: 0.01, carbs: 0.12 }, source: 'photo' };
+
+  const created = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-08-19', items: [item] })
+  })).json();
+
+  await api(`/api/entries/${created.id}`, {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ items: [item], portionSource: 'weighed' })
+  });
+
+  const day = await (await api('/api/entries?day=2026-08-19', { headers: auth })).json();
+  assert.equal(day.entries[0].portionSource, 'weighed');
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fromOpenFoodFacts, fromUsda, parseServing, rankResults, toItem, isPlausible } from './foods.js';
+import { fromOpenFoodFacts, fromUsda, parseServing, rankResults, toItem, isPlausible, summariseRecent } from './foods.js';
 
 const OFF_PRODUCT = {
   code: '3017624010701',
@@ -141,4 +141,48 @@ test('plausibility accepts ordinary foods across the range', () => {
   ]) {
     assert.equal(isPlausible(per100), true, JSON.stringify(per100));
   }
+});
+
+test('recent foods collapse by name and count uses', () => {
+  const now = Date.parse('2026-08-30T12:00:00Z');
+  const per = { calories: 1, protein: 0.1, fat: 0, carbs: 0.2 };
+  const rows = [
+    { item: { name: 'Greek yoghurt', grams: 170, per }, loggedAt: '2026-08-30T08:00:00Z' },
+    { item: { name: 'greek yoghurt', grams: 150, per }, loggedAt: '2026-08-29T08:00:00Z' },
+    { item: { name: 'Steak', grams: 220, per }, loggedAt: '2026-08-29T19:00:00Z' }
+  ];
+  const out = summariseRecent(rows, { now });
+  assert.equal(out.length, 2);
+  assert.equal(out[0].name, 'Greek yoghurt', 'the twice-eaten food ranks first');
+  assert.equal(out[0].uses, 2);
+  assert.equal(out[0].grams, 170, 'the newest occurrence supplies the default weight');
+});
+
+test('a daily staple outranks a newer one-off', () => {
+  const now = Date.parse('2026-08-30T12:00:00Z');
+  const per = { calories: 1, protein: 0, fat: 0, carbs: 0 };
+  const rows = [{ item: { name: 'Restaurant curry', grams: 400, per }, loggedAt: '2026-08-30T11:00:00Z' }];
+  for (let d = 1; d <= 8; d++) {
+    rows.push({ item: { name: 'Porridge', grams: 250, per }, loggedAt: `2026-08-${22 + (d % 8)}T07:00:00Z` });
+  }
+  const out = summariseRecent(rows, { now });
+  assert.equal(out[0].name, 'Porridge', 'the staple must beat the newer one-off');
+});
+
+test('recents ignore items with no rates or no weight', () => {
+  const now = Date.now();
+  assert.equal(summariseRecent([
+    { item: { name: 'no rates', grams: 100 }, loggedAt: new Date().toISOString() },
+    { item: { name: 'no weight', per: { calories: 1 } }, loggedAt: new Date().toISOString() },
+    { item: { grams: 100, per: { calories: 1 } }, loggedAt: new Date().toISOString() }
+  ], { now }).length, 0);
+  assert.deepEqual(summariseRecent(null), []);
+});
+
+test('recents respect the limit', () => {
+  const per = { calories: 1, protein: 0, fat: 0, carbs: 0 };
+  const rows = Array.from({ length: 30 }, (_, i) => ({
+    item: { name: `food ${i}`, grams: 100, per }, loggedAt: '2026-08-30T08:00:00Z'
+  }));
+  assert.equal(summariseRecent(rows, { limit: 5 }).length, 5);
 });
