@@ -2,7 +2,7 @@
 //
 // CACHE_NAME must be bumped on every shell change, or installed clients keep
 // serving the old build indefinitely.
-const CACHE_NAME = 'plate-v14';
+const CACHE_NAME = 'plate-v15';
 
 const SHELL = [
   '/', '/index.html', '/app.css', '/app.js',

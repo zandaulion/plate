@@ -1154,8 +1154,9 @@ function renderExpenditure(exp) {
   if (exp.method !== 'measured') {
     const p = exp.progress || {};
     const parts = [];
-    if (p.loggedDays < p.neededDays) parts.push(`${p.neededDays - p.loggedDays} more logged days`);
-    if (p.weighings < p.neededWeighings) parts.push(`${p.neededWeighings - p.weighings} more weigh-ins`);
+    const plural = (n, one, many) => `${n} more ${n === 1 ? one : many}`;
+    if (p.loggedDays < p.neededDays) parts.push(plural(p.neededDays - p.loggedDays, 'day logged', 'days logged'));
+    if (p.weighings < p.neededWeighings) parts.push(plural(p.neededWeighings - p.weighings, 'weigh-in', 'weigh-ins'));
 
     el.innerHTML = `
       <div class="big">${exp.available ? `${exp.kcal} kcal` : '&mdash;'}
@@ -1164,7 +1165,8 @@ function renderExpenditure(exp) {
         ? 'From your height, weight, age and activity — a population average, not you.'
         : 'Fill in your details above for a first estimate.'}</p>
       <p class="progress">${parts.length
-        ? `Log ${parts.join(' and ')} and this becomes a measurement of what you actually burn.`
+        ? `Needs ${parts.join(' and ')}. Then it becomes a measurement of what you actually burn,
+           rather than an average of people your size.`
         : 'Keep logging and weighing — this becomes a measurement once there is enough.'}</p>`;
     return;
   }
