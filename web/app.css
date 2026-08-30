@@ -387,12 +387,67 @@ input[type="range"]::-moz-range-thumb {
 .entry:active { background: var(--sunken); }
 .entry-del { cursor: pointer; }
 
-/* Full-screen barcode viewfinder. Tapping anywhere cancels, so there is no
-   way to get stuck with the camera running. */
-.scanner {
-  position: fixed; inset: 0; z-index: 60;
-  width: 100%; height: 100%; object-fit: cover; background: #000;
+/* ---------------------------------------------------- barcode viewfinder */
+
+.scanner-wrap { position: fixed; inset: 0; z-index: 60; background: #000; }
+.scanner { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.scan-ui {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 24px;
+  padding-bottom: max(24px, calc(env(safe-area-inset-bottom) + 24px));
+  color: #fff; text-align: center;
 }
+.scan-title { margin: 0; font-size: 1.05rem; font-weight: 650; text-shadow: 0 1px 6px rgba(0,0,0,.7); }
+
+/* The window darkens the whole viewport with one enormous spread shadow, which
+   paints over any sibling earlier in the DOM -- the title was being dimmed by
+   the very effect meant to be behind it. Lifting the text and the button above
+   it costs nothing and keeps the markup in reading order. */
+.scan-title, .scan-hint, .scan-cancel { position: relative; z-index: 1; }
+
+/* The window is cut out of a dim surround by an enormous spread shadow, which
+   is the simplest way to darken everything except a rectangle. Wide and short,
+   because that is the shape of a barcode. */
+.scan-window {
+  position: relative; width: min(78vw, 320px); height: 150px; border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .58);
+}
+.scan-window .c {
+  position: absolute; width: 30px; height: 30px;
+  border: 4px solid #7CC79E; border-radius: 4px;
+}
+.scan-window .tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; }
+.scan-window .tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; }
+.scan-window .bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; }
+.scan-window .br { bottom: -2px; right: -2px; border-left: 0; border-top: 0; }
+
+.scan-line {
+  position: absolute; left: 10px; right: 10px; height: 2px; top: 12px;
+  background: linear-gradient(90deg, transparent, #7CC79E, transparent);
+  animation: sweep 2.1s ease-in-out infinite;
+}
+@keyframes sweep { 0%,100% { transform: translateY(0) } 50% { transform: translateY(122px) } }
+@media (prefers-reduced-motion: reduce) {
+  .scan-line { animation: none; top: 50%; }
+}
+
+.scan-hint {
+  margin: 0; min-height: 2.4em; max-width: 300px;
+  font-size: .86rem; line-height: 1.4; color: rgba(255,255,255,.85);
+  text-shadow: 0 1px 6px rgba(0,0,0,.7);
+}
+.scan-cancel {
+  border: 1px solid rgba(255,255,255,.45); background: rgba(0,0,0,.35);
+  color: #fff; border-radius: 99px; padding: 11px 30px; font-weight: 600;
+  backdrop-filter: blur(6px);
+}
+
+/* A found barcode flashes the frame, so a successful scan reads as success
+   rather than as the screen closing by itself. */
+.scanner-wrap.hit .scan-window { box-shadow: 0 0 0 100vmax rgba(124, 199, 158, .45); }
+.scanner-wrap.hit .scan-window .c { border-color: #fff; }
 
 
 /* The weighed declaration. Small, because most meals will not be weighed and

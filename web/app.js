@@ -955,17 +955,33 @@ async function startScan() {
     return;
   }
 
-  const video = document.createElement('video');
-  video.className = 'scanner';
-  video.playsInline = true;
+  // A bare camera feed tells the user nothing about what it wants, so the
+  // viewfinder is framed: a dimmed surround with a barcode-shaped window,
+  // corner brackets, and an explicit way out. The window is wide and short
+  // because that is the shape of the thing being looked for.
+  const wrap = document.createElement('div');
+  wrap.className = 'scanner-wrap';
+  wrap.innerHTML = `
+    <video class="scanner" playsinline></video>
+    <div class="scan-ui">
+      <p class="scan-title">Point at the barcode</p>
+      <div class="scan-window" role="img" aria-label="Barcode viewfinder">
+        <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+        <div class="scan-line"></div>
+      </div>
+      <p class="scan-hint" id="scan-hint" role="status"></p>
+      <button class="scan-cancel" type="button">Cancel</button>
+    </div>`;
+
+  const video = wrap.querySelector('video');
   video.srcObject = stream;
 
   // The camera must be released however the scanner goes away -- back
-  // gesture, tap, timeout or a successful scan -- so teardown lives in one
+  // gesture, cancel, timeout or a successful scan -- so teardown lives in one
   // place and the navigation layer owns when it runs.
   const teardown = () => {
     stream.getTracks().forEach((t) => t.stop());
-    video.remove();
+    wrap.remove();
   };
 
   // Registered before the overlay is on screen and before play() is awaited.
@@ -973,7 +989,7 @@ async function startScan() {
   // while a phone camera warms up -- where the viewfinder is covering the app
   // but the back gesture would close the sheet underneath it and leave the
   // camera running.
-  document.body.appendChild(video);
+  document.body.appendChild(wrap);
   openScreen('scanner', teardown);
 
   try {
@@ -988,20 +1004,34 @@ async function startScan() {
   });
 
   const stop = () => dismissScreen('scanner');
-  video.addEventListener('click', stop);
+  wrap.querySelector('.scan-cancel').addEventListener('click', stop);
 
-  const deadline = Date.now() + 20000;
+  // Say something before giving up. Twenty seconds of an unchanging camera
+  // with no feedback reads as a broken app rather than a difficult barcode.
+  const nudge = setTimeout(() => {
+    const hint = wrap.querySelector('#scan-hint');
+    if (hint) hint.textContent = 'Still looking — try more light, or move closer so the '
+      + 'barcode fills the frame.';
+  }, 6000);
+
+  const deadline = Date.now() + 25000;
   const tick = async () => {
-    if (!video.isConnected) return;
+    if (!wrap.isConnected) { clearTimeout(nudge); return; }
     if (Date.now() > deadline) {
+      clearTimeout(nudge);
       stop();
-      $('finder-hint').textContent = 'No barcode found. Tap the scan button to try again.';
+      $('finder-hint').textContent =
+        'No barcode found. Try again, or use the barcode button here to type the number.';
       return;
     }
     try {
       const found = await detector.detect(video);
       if (found.length) {
         const code = found[0].rawValue;
+        clearTimeout(nudge);
+        // Confirm the hit before the camera disappears, so a successful scan
+        // does not just look like the screen closing on its own.
+        wrap.classList.add('hit');
         stop();
         lookupBarcode(code);
         return;
