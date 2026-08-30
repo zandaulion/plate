@@ -1,0 +1,15 @@
+{
+  "name": "Plate",
+  "short_name": "Plate",
+  "description": "Photograph a meal, correct the portion, log it.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAFAF6",
+  "theme_color": "#12140F",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

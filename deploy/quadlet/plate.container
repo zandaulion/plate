@@ -1,0 +1,23 @@
+[Unit]
+Description=Plate server (photo-first calorie and macro log)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/plate:latest
+ContainerName=plate
+PublishPort=127.0.0.1:8096:3000
+Volume=plate-data:/data
+EnvironmentFile=%h/.config/plate/plate.env
+Environment=DATA_DIR=/data
+Environment=PORT=3000
+Environment=BIND_HOST=0.0.0.0
+NoNewPrivileges=true
+DropCapability=ALL
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,27 @@
+FROM docker.io/library/node:24-alpine
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# core/ is imported by server/ and also served to the browser, so it is not
+# optional: without it the image builds and then dies at startup on
+# ERR_MODULE_NOT_FOUND. This line moves whenever the import graph does.
+COPY core ./core
+COPY server ./server
+COPY web ./web
+
+RUN addgroup -g 10006 appgroup && \
+    adduser -u 10006 -G appgroup -s /bin/sh -D appuser && \
+    mkdir -p /data/photos && chown -R 10006:10006 /data /app
+
+VOLUME /data
+ENV DATA_DIR=/data
+ENV PORT=3000
+
+USER 10006
+EXPOSE 3000
+
+CMD ["node", "server/index.js"]

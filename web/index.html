@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12140F">
+<title>Plate</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon.svg">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<div id="gate" class="screen gate" hidden>
+  <div class="gate-inner">
+    <h1 class="brand">Plate</h1>
+    <p class="gate-lead">Photograph a meal, correct the portion, log it.</p>
+    <form id="redeem-form" class="stack">
+      <label for="invite">Invite code</label>
+      <input id="invite" name="invite" autocomplete="one-time-code" spellcheck="false"
+             placeholder="ABCDE-FGHJK" required>
+      <button class="primary" type="submit">Continue</button>
+      <p id="gate-error" class="error" role="alert" hidden></p>
+    </form>
+  </div>
+</div>
+
+<div id="app" class="screen" hidden>
+
+  <header class="topbar">
+    <button id="prev-day" class="icon-btn" aria-label="Previous day">&#8249;</button>
+    <button id="day-label" class="day-label" aria-live="polite">Today</button>
+    <button id="next-day" class="icon-btn" aria-label="Next day">&#8250;</button>
+    <button id="open-profile" class="icon-btn profile-btn" aria-label="Profile">&#9881;</button>
+  </header>
+
+  <main id="day-view" class="view">
+    <section class="totals" aria-labelledby="totals-heading">
+      <h2 id="totals-heading" class="sr-only">Day total</h2>
+      <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>
+      <div id="maintenance" class="maintenance"></div>
+      <div id="split" class="split" role="img" aria-label="Macronutrient split"></div>
+      <dl id="macros" class="macros"></dl>
+    </section>
+
+    <section aria-labelledby="entries-heading">
+      <h2 id="entries-heading" class="section-head">Meals</h2>
+      <ul id="entries" class="entries"></ul>
+      <p id="empty-day" class="empty" hidden>Nothing logged yet.</p>
+    </section>
+  </main>
+
+  <button id="add-btn" class="fab" aria-label="Add a meal from a photo">
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="26" height="26">
+      <path d="M12 6.5h-1.2l-.9-1.4a1 1 0 0 0-.84-.45H8a1 1 0 0 0-.84.45l-.9 1.4H4.8A1.8 1.8 0 0 0 3 8.3v8.4a1.8 1.8 0 0 0 1.8 1.8h14.4a1.8 1.8 0 0 0 1.8-1.8V8.3a1.8 1.8 0 0 0-1.8-1.8H12Z"
+            fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+      <circle cx="12" cy="12.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+    </svg>
+  </button>
+  <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
+
+  <div id="review" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="review-heading">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="review-heading">Check the portion</h2>
+        <button id="review-close" class="icon-btn" aria-label="Discard">&times;</button>
+      </header>
+
+      <div id="review-body">
+        <img id="review-photo" class="review-photo" alt="The meal you photographed">
+
+        <p id="review-note" class="note" hidden></p>
+
+        <!-- The measurement says this control is worth more than everything
+             else on the screen, so it sits above the item list, not below. -->
+        <section class="weight-block">
+          <div class="weight-head">
+            <label for="total-weight">Total weight on the plate</label>
+            <output id="weight-out" for="total-weight">0 g</output>
+          </div>
+          <input id="total-weight" type="range" min="20" max="1500" step="10" value="300">
+          <p class="hint" id="weight-hint">Drag to match what you actually ate. This is the single
+            biggest thing you can correct.</p>
+        </section>
+
+        <!-- Sits directly under the weight control, not below the item list:
+             the number has to be visible while the slider is being dragged,
+             or the correction is being made blind. -->
+        <section class="review-totals">
+          <div class="kcal"><span id="review-kcal">0</span><span class="unit">kcal</span></div>
+          <p id="review-range" class="range-line"></p>
+          <dl id="review-macros" class="macros"></dl>
+        </section>
+
+        <ul id="review-items" class="items"></ul>
+
+        <fieldset class="meals">
+          <legend>Meal</legend>
+          <div id="meal-picker" class="chips"></div>
+        </fieldset>
+      </div>
+
+      <div id="review-status" class="status" role="status"></div>
+
+      <footer class="sheet-foot">
+        <button id="save-entry" class="primary" type="button">Save</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="profile" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="profile-heading">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="profile-heading">You</h2>
+        <button id="profile-close" class="icon-btn" aria-label="Close">&times;</button>
+      </header>
+
+      <form id="profile-form" class="stack">
+        <p class="hint">Used only to estimate what you burn on an average day. It stays on this
+          server and is never sent anywhere else.</p>
+
+        <div class="field-row">
+          <label for="p-weight">Weight<span class="unit-tag">kg</span>
+            <input id="p-weight" type="number" inputmode="decimal" min="20" max="400" step="0.1"></label>
+          <label for="p-height">Height<span class="unit-tag">cm</span>
+            <input id="p-height" type="number" inputmode="numeric" min="90" max="260" step="1"></label>
+        </div>
+
+        <div class="field-row">
+          <label for="p-age">Age<span class="unit-tag">years</span>
+            <input id="p-age" type="number" inputmode="numeric" min="13" max="120" step="1"></label>
+          <label for="p-sex">Sex
+            <select id="p-sex">
+              <option value="">Prefer not to say</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select></label>
+        </div>
+
+        <label for="p-activity">Typical week
+          <select id="p-activity"></select></label>
+
+        <div id="profile-result" class="maintenance"></div>
+        <button class="primary" type="submit">Save</button>
+        <p id="profile-error" class="error" role="alert" hidden></p>
+      </form>
+
+      <footer class="sheet-foot muted-foot">
+        <button id="logout" class="text-btn" type="button">Sign this device out</button>
+      </footer>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
