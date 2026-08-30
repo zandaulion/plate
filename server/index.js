@@ -11,6 +11,7 @@ import {
   createInvite, listInvites, COOKIE_NAME
 } from './auth.js';
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
+import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
 import { fromModelResponse, totalsOf, rangesOf } from '../core/analysis/estimate.js';
 import { parseResponse } from '../core/analysis/prompt.js';
 import { maintenanceEnergy, ACTIVITY_LEVELS } from '../core/nutrition.js';
@@ -87,7 +88,10 @@ app.get('/api/me', requireDevice, (req, res) => {
     maintenance: profile ? maintenanceEnergy(profile) : null,
     activityLevels: ACTIVITY_LEVELS,
     meals: MEALS,
-    analysisConfigured: isConfigured()
+    analysisConfigured: isConfigured(),
+    // The UI warns that search covers packaged food only when USDA is absent,
+    // rather than letting generic searches quietly return branded noise.
+    genericSearch: usdaConfigured()
   });
 });
 
@@ -152,6 +156,19 @@ app.post('/api/analyse', requireDevice, asyncRoute(async (req, res) => {
     totals: totalsOf(estimate),
     ranges: rangesOf(estimate),
     usage, model
+  });
+}));
+
+// ----------------------------------------------------------------- foods
+
+app.get('/api/foods/barcode/:code', requireDevice, asyncRoute(async (req, res) => {
+  res.json({ food: await lookupBarcode(req.params.code) });
+}));
+
+app.get('/api/foods/search', requireDevice, asyncRoute(async (req, res) => {
+  res.json({
+    results: await searchFoods(req.query.q),
+    genericSearch: usdaConfigured()
   });
 }));
 
@@ -231,6 +248,38 @@ app.get('/api/days', requireDevice, (req, res) => {
   res.json({ days: rows.map((r) => ({ ...r, calories: Math.round(r.calories || 0) })) });
 });
 
+/**
+ * Replace an entry's contents.
+ *
+ * The photo is deliberately not replaceable here: editing exists so a portion
+ * can be corrected after the fact, and re-analysing would cost another model
+ * call to answer a question the user has already answered by hand.
+ */
+app.put('/api/entries/:id', requireDevice, (req, res) => {
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND device_id = ?')
+    .get(req.params.id, req.device.id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  const b = req.body || {};
+  const items = Array.isArray(b.items) ? b.items : [];
+  if (!items.length) {
+    return res.status(400).json({ error: 'no_items', message: 'An entry needs at least one food.' });
+  }
+
+  const totals = totalsOf({ items });
+  db.prepare(`
+    UPDATE entries SET meal = ?, note = ?, portion_confirmed = ?, items_json = ?, totals_json = ?
+    WHERE id = ?
+  `).run(
+    MEALS.includes(b.meal) ? b.meal : null,
+    typeof b.note === 'string' ? b.note.slice(0, 500) : null,
+    b.portionConfirmed ? 1 : 0,
+    JSON.stringify(items), JSON.stringify(totals), row.id
+  );
+
+  res.json({ id: row.id, day: row.day, totals });
+});
+
 app.delete('/api/entries/:id', requireDevice, (req, res) => {
   const row = db.prepare('SELECT * FROM entries WHERE id = ? AND device_id = ?')
     .get(req.params.id, req.device.id);
@@ -292,7 +341,7 @@ app.delete('/api/admin/devices/:id', requireAdmin, (req, res) => {
 // ----------------------------------------------------------------- errors
 
 app.use((err, req, res, next) => {
-  if (err instanceof AnalysisError) {
+  if (err instanceof AnalysisError || err instanceof LookupError) {
     return res.status(err.status).json({ error: err.code, message: err.message });
   }
   console.error('unhandled', err);

@@ -5,8 +5,10 @@
 // client can reuse them unchanged.
 
 import {
-  totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros
+  totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
+  addManualItem, hasPhotoItems
 } from '/core/analysis/estimate.js';
+import { toItem } from '/core/foods.js';
 import { localDayKey } from '/core/day.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +21,14 @@ const state = {
   estimate: null,
   photo: null,      // { base64, mimeType, objectUrl }
   meal: null,
-  busy: false
+  busy: false,
+  entriesById: new Map(),
+  // One sheet serves three paths: seeded from a photo, started empty and
+  // filled by search, or loaded from a saved entry. Keeping them in one place
+  // avoids three near-identical editors drifting apart.
+  mode: 'photo',    // 'photo' | 'manual' | 'edit'
+  editingId: null,
+  existingPhotoId: null
 };
 
 // -------------------------------------------------------------------- api
@@ -155,6 +164,8 @@ function renderSplit(split) {
 
 function renderEntries(entries) {
   const list = $('entries');
+  // Kept so a tap can reopen the entry in the editor without another request.
+  state.entriesById = new Map(entries.map((e) => [e.id, e]));
   $('empty-day').hidden = entries.length > 0;
 
   list.innerHTML = entries.map((e) => {
@@ -204,12 +215,17 @@ $('next-day').addEventListener('click', () => {
 $('day-label').addEventListener('click', () => { state.day = localDayKey(); loadDay(); });
 
 $('entries').addEventListener('click', async (ev) => {
-  const id = ev.target.closest('[data-del]')?.dataset.del;
-  if (!id) return;
-  if (!confirm('Delete this entry?')) return;
-  await api(`/api/entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  toast('Deleted');
-  loadDay();
+  const deleteId = ev.target.closest('[data-del]')?.dataset.del;
+  if (deleteId) {
+    if (!confirm('Delete this entry?')) return;
+    await api(`/api/entries/${encodeURIComponent(deleteId)}`, { method: 'DELETE' });
+    toast('Deleted');
+    return loadDay();
+  }
+
+  const id = ev.target.closest('.entry')?.dataset.id;
+  const entry = id && state.entriesById?.get(id);
+  if (entry) openReview('edit', entry);
 });
 
 // ------------------------------------------------------------- capturing
@@ -250,7 +266,7 @@ $('file-input').addEventListener('change', async (ev) => {
   ev.target.value = '';
   if (!file) return;
 
-  openReview();
+  openReview('photo');
   setStatus('<span class="spinner"></span>Reading the photo…');
 
   try {
@@ -295,34 +311,77 @@ function setStatus(html, isError = false) {
 
 // ---------------------------------------------------------------- review
 
-function openReview() {
-  state.estimate = null;
+const SHEET_TITLES = {
+  photo: 'Check the portion',
+  manual: 'Add food',
+  edit: 'Edit this meal'
+};
+
+function openReview(mode, entry = null) {
+  state.mode = mode;
+  state.editingId = entry?.id || null;
+  state.existingPhotoId = entry?.photoId || null;
   state.photo = null;
-  $('review-photo').removeAttribute('src');
-  $('review-items').innerHTML = '';
+  state.estimate = entry
+    ? { items: entry.items, portionConfirmed: entry.portionConfirmed, note: entry.note || '' }
+    : null;
+  state.meal = entry?.meal || guessMeal();
+
+  $('review-heading').textContent = SHEET_TITLES[mode];
+  $('save-entry').textContent = mode === 'edit' ? 'Save changes' : 'Save';
+
+  const photoEl = $('review-photo');
+  if (entry?.photoId) {
+    photoEl.src = `/api/photo/${encodeURIComponent(entry.photoId)}`;
+    photoEl.hidden = false;
+  } else {
+    photoEl.removeAttribute('src');
+    photoEl.hidden = mode !== 'photo';
+  }
+
   $('review-note').hidden = true;
-  $('review-kcal').textContent = '0';
-  $('review-range').textContent = '';
-  $('review-macros').innerHTML = '';
-  $('save-entry').disabled = true;
+  $('food-q').value = '';
+  $('food-results').innerHTML = '';
+  $('finder-hint').textContent = state.me?.genericSearch === false
+    ? 'Generic foods may be missing — search covers packaged products best.'
+    : '';
+  setStatus('');
+
+  if (entry) {
+    renderReview();
+    if (hasPhotoItems(state.estimate)) initWeightSlider();
+  } else {
+    $('review-items').innerHTML = '';
+    $('review-kcal').textContent = '0';
+    $('review-range').textContent = '';
+    $('review-macros').innerHTML = '';
+    $('weight-block').hidden = true;
+    $('save-entry').disabled = true;
+    renderMealChips();
+  }
+
   $('review').hidden = false;
+  if (mode === 'manual') setTimeout(() => $('food-q').focus(), 120);
 }
 
 function closeReview() {
   if (state.photo?.objectUrl) URL.revokeObjectURL(state.photo.objectUrl);
   state.estimate = null;
   state.photo = null;
+  state.editingId = null;
+  state.existingPhotoId = null;
   $('review').hidden = true;
 }
 
 $('review-close').addEventListener('click', closeReview);
 $('review').addEventListener('click', (ev) => { if (ev.target === $('review')) closeReview(); });
+$('add-food-btn').addEventListener('click', () => openReview('manual'));
 
 function initWeightSlider() {
   const grams = totalsOf(state.estimate).grams || 100;
   const slider = $('total-weight');
-  // Range is centred on the model's guess so the user can move either way with
-  // one thumb, rather than starting at an arbitrary end of a fixed scale.
+  // Range is centred on the current weight so the user can move either way
+  // with one thumb, rather than starting at an arbitrary end of a fixed scale.
   slider.min = Math.max(10, Math.round(grams * 0.25 / 10) * 10);
   slider.max = Math.round(grams * 2.5 / 10) * 10;
   slider.step = grams > 600 ? 20 : 10;
@@ -336,11 +395,24 @@ function renderReview() {
   const totals = totalsOf(est);
   const ranges = rangesOf(est);
 
+  // The weight slider rescales the whole plate proportionally, which only
+  // makes sense for a photo estimate. When every item came from a database
+  // the grams were entered deliberately, so the control would fight the user.
+  const photoBased = hasPhotoItems(est);
+  $('weight-block').hidden = !photoBased;
+
   $('weight-out').textContent = `${Math.round(totals.grams)} g`;
   $('review-kcal').textContent = Math.round(totals.calories);
-  $('review-range').textContent =
-    `Likely ${ranges.calories.low}–${ranges.calories.high} kcal` +
-    (est.portionConfirmed ? '' : ' — narrows once you check the weight');
+
+  if (photoBased) {
+    $('review-range').textContent =
+      `Likely ${ranges.calories.low}\u2013${ranges.calories.high} kcal`
+      + (est.portionConfirmed ? '' : ' \u2014 narrows once you check the weight');
+  } else {
+    $('review-range').textContent = totals.calories
+      ? 'From the food database \u2014 exact for the weights you entered.'
+      : '';
+  }
   renderMacros($('review-macros'), totals);
 
   if (est.note) {
@@ -392,7 +464,7 @@ $('review-items').addEventListener('click', (ev) => {
 
   if (ev.target.closest('[data-remove]')) {
     state.estimate = removeItem(state.estimate, id);
-    initWeightSlider();
+    if (hasPhotoItems(state.estimate)) initWeightSlider();
     renderReview();
     return;
   }
@@ -413,27 +485,194 @@ $('review-items').addEventListener('change', (ev) => {
   renderReview();
 });
 
+// ----------------------------------------------------------- food finder
+
+let searchTimer = null;
+let searchSeq = 0;
+
+function renderResults(results) {
+  $('food-results').innerHTML = results.map((f, i) => `
+    <li><button class="result" type="button" data-i="${i}">
+      <span class="result-name">${esc(f.name)}<span class="src">${esc(f.source === 'usda' ? 'USDA' : 'OFF')}</span></span>
+      <span class="result-meta">${Math.round(f.per100.calories)} kcal / 100 g</span>
+      <span class="result-add" aria-hidden="true">+</span>
+    </button></li>`).join('');
+  $('food-results').dataset.payload = JSON.stringify(results);
+}
+
+async function runSearch(query) {
+  // Every response carries the sequence number of the request that asked for
+  // it, so a slow early reply cannot overwrite a fast later one.
+  const seq = ++searchSeq;
+  $('finder-hint').textContent = 'Searching…';
+
+  try {
+    const data = await api(`/api/foods/search?q=${encodeURIComponent(query)}`);
+    if (seq !== searchSeq) return;
+    renderResults(data.results);
+    $('finder-hint').textContent = data.results.length
+      ? (data.genericSearch ? '' : 'Generic foods may be missing — packaged products search best.')
+      : 'Nothing found. Try a different word, or scan the barcode.';
+  } catch (err) {
+    if (seq !== searchSeq) return;
+    $('food-results').innerHTML = '';
+    $('finder-hint').textContent = err.message;
+  }
+}
+
+$('food-q').addEventListener('input', (ev) => {
+  const query = ev.target.value.trim();
+  clearTimeout(searchTimer);
+  if (query.length < 2) {
+    $('food-results').innerHTML = '';
+    $('finder-hint').textContent = '';
+    return;
+  }
+  searchTimer = setTimeout(() => runSearch(query), 350);
+});
+
+/**
+ * Adds a looked-up food at its stated serving size, or 100 g when it has
+ * none.
+ *
+ * Deliberately no weight prompt: the item lands in the list with the same
+ * grams stepper every other item has, so adjusting it uses the control the
+ * user already knows instead of a modal that interrupts the flow.
+ */
+function addFood(food) {
+  const item = toItem(food, food.servingG || 100);
+  if (!item) return;
+
+  state.estimate = addManualItem(
+    state.estimate || { items: [], portionConfirmed: false, note: '' }, item);
+
+  $('food-q').value = '';
+  $('food-results').innerHTML = '';
+  $('finder-hint').textContent = '';
+  renderReview();
+
+  const added = state.estimate.items[state.estimate.items.length - 1];
+  toast(`Added ${food.name} at ${added.grams} g — adjust below`);
+
+  // Put the new row's weight field under the thumb straight away.
+  const field = document.querySelector(`.item[data-id="${added.id}"] input`);
+  field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+$('food-results').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-i]');
+  if (!btn) return;
+  const results = JSON.parse($('food-results').dataset.payload || '[]');
+  const food = results[Number(btn.dataset.i)];
+  if (food) addFood(food);
+});
+
+async function lookupBarcode(code) {
+  $('finder-hint').textContent = 'Looking up…';
+  try {
+    const { food } = await api(`/api/foods/barcode/${encodeURIComponent(code)}`);
+    $('finder-hint').textContent = '';
+    addFood(food);
+  } catch (err) {
+    $('finder-hint').textContent = err.message;
+  }
+}
+
+/**
+ * Scans with the browser's BarcodeDetector where it exists (Chrome on
+ * Android). Everywhere else the barcode can still be typed, which is slower
+ * but never leaves the user stuck.
+ */
+$('scan-btn').addEventListener('click', async () => {
+  if (!('BarcodeDetector' in window)) {
+    const typed = prompt('Type the barcode number:');
+    if (typed) lookupBarcode(typed.trim());
+    return;
+  }
+
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
+  } catch {
+    const typed = prompt('No camera access. Type the barcode number:');
+    if (typed) lookupBarcode(typed.trim());
+    return;
+  }
+
+  const video = document.createElement('video');
+  video.className = 'scanner';
+  video.playsInline = true;
+  video.srcObject = stream;
+  document.body.appendChild(video);
+  await video.play();
+
+  const detector = new window.BarcodeDetector({
+    formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
+  });
+
+  const stop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    video.remove();
+  };
+  video.addEventListener('click', stop);
+
+  const deadline = Date.now() + 20000;
+  const tick = async () => {
+    if (!video.isConnected) return;
+    if (Date.now() > deadline) {
+      stop();
+      $('finder-hint').textContent = 'No barcode found. Tap the scan button to try again.';
+      return;
+    }
+    try {
+      const found = await detector.detect(video);
+      if (found.length) {
+        const code = found[0].rawValue;
+        stop();
+        lookupBarcode(code);
+        return;
+      }
+    } catch {}
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
+
+// ------------------------------------------------------------------ save
+
 $('save-entry').addEventListener('click', async () => {
   if (!state.estimate || state.busy) return;
   state.busy = true;
   $('save-entry').disabled = true;
   setStatus('<span class="spinner"></span>Saving…');
 
+  const body = {
+    meal: state.meal,
+    items: state.estimate.items,
+    portionConfirmed: state.estimate.portionConfirmed,
+    note: state.estimate.note || null
+  };
+
   try {
-    await api('/api/entries', {
-      method: 'POST',
-      body: JSON.stringify({
-        day: state.day,
-        meal: state.meal,
-        items: state.estimate.items,
-        portionConfirmed: state.estimate.portionConfirmed,
-        note: state.estimate.note || null,
-        image: state.photo?.base64,
-        mimeType: state.photo?.mimeType
-      })
-    });
+    if (state.mode === 'edit') {
+      await api(`/api/entries/${encodeURIComponent(state.editingId)}`, {
+        method: 'PUT', body: JSON.stringify(body)
+      });
+    } else {
+      await api('/api/entries', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...body,
+          day: state.day,
+          image: state.photo?.base64,
+          mimeType: state.photo?.mimeType
+        })
+      });
+    }
     closeReview();
-    toast('Logged');
+    toast(state.mode === 'edit' ? 'Updated' : 'Logged');
     await loadDay();
   } catch (err) {
     setStatus(err.message, true);

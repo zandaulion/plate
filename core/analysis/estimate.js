@@ -106,21 +106,42 @@ export function totalsOf(estimate) {
  * Ranges to display. Once the portion has been confirmed the band tightens,
  * because the measurement says the estimate really is better -- this is not a
  * cosmetic reward.
+ *
+ * The band applies only to the part of the meal a model read off a photograph.
+ * A barcode or database item carries exact per-gram nutrition, so its only
+ * uncertainty is the weight the user typed; widening it by the photo error
+ * would claim doubt that is not there, and would make a carefully scanned
+ * yoghurt look as vague as a guessed plate of stew.
  */
 export function rangesOf(estimate) {
-  const totals = totalsOf(estimate);
+  const items = estimate?.items || [];
   const band = estimate?.portionConfirmed ? ERROR_BANDS.corrected : ERROR_BANDS.raw;
+
+  const photo = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+  const exact = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+  for (const item of items) {
+    const target = item.source === 'photo' ? photo : exact;
+    const m = itemMacros(item);
+    for (const n of NUTRIENTS) target[n] += m[n];
+  }
+
   const out = {};
   for (const n of NUTRIENTS) {
-    const v = totals[n];
+    const dp = n === 'calories' ? 0 : 1;
+    const value = photo[n] + exact[n];
     out[n] = {
-      value: v,
-      low: round(Math.max(0, v * (1 - band[n])), n === 'calories' ? 0 : 1),
-      high: round(v * (1 + band[n]), n === 'calories' ? 0 : 1),
-      confidence: CONFIDENCE[n]
+      value: round(value, dp),
+      low: round(Math.max(0, exact[n] + photo[n] * (1 - band[n])), dp),
+      high: round(exact[n] + photo[n] * (1 + band[n]), dp),
+      confidence: photo[n] > 0 ? CONFIDENCE[n] : 'exact'
     };
   }
   return out;
+}
+
+/** True when any part of this estimate came from a photograph. */
+export function hasPhotoItems(estimate) {
+  return (estimate?.items || []).some((i) => i.source === 'photo');
 }
 
 /** Change one item's weight. Marks the portion as user-confirmed. */

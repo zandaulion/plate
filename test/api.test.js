@@ -204,3 +204,69 @@ test('a re-used code leaves no orphaned device behind', async () => {
   await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code }) });
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM devices').get().n, after);
 });
+
+test('food routes require a device', async () => {
+  assert.equal((await api('/api/foods/search?q=banana')).status, 401);
+  assert.equal((await api('/api/foods/barcode/3017624010701')).status, 401);
+});
+
+test('a malformed barcode is rejected before any network call', async () => {
+  const { auth } = await registerDevice();
+  for (const code of ['123', 'abc', '1234567890123456789']) {
+    const res = await api(`/api/foods/barcode/${code}`, { headers: auth });
+    assert.equal(res.status, 400, `should refuse ${code}`);
+    assert.equal((await res.json()).error, 'bad_barcode');
+  }
+});
+
+test('a one-character search is refused rather than sent upstream', async () => {
+  const { auth } = await registerDevice();
+  const res = await api('/api/foods/search?q=b', { headers: auth });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'short_query');
+});
+
+test('an entry can be edited, and only by its own device', async () => {
+  const a = await registerDevice();
+  const b = await registerDevice();
+  const item = { name: 'rice', grams: 200, per: { calories: 1.3, protein: 0.027, fat: 0.003, carbs: 0.28 } };
+
+  const created = await (await api('/api/entries', {
+    method: 'POST', headers: a.auth,
+    body: JSON.stringify({ day: '2026-08-27', meal: 'lunch', items: [item] })
+  })).json();
+  assert.equal(created.totals.calories, 260);
+
+  // Halve the portion.
+  const edited = await api(`/api/entries/${created.id}`, {
+    method: 'PUT', headers: a.auth,
+    body: JSON.stringify({ meal: 'dinner', portionConfirmed: true, items: [{ ...item, grams: 100 }] })
+  });
+  assert.equal(edited.status, 200);
+  assert.equal((await edited.json()).totals.calories, 130);
+
+  const day = await (await api('/api/entries?day=2026-08-27', { headers: a.auth })).json();
+  assert.equal(day.entries.length, 1, 'editing must not create a second entry');
+  assert.equal(day.entries[0].meal, 'dinner');
+  assert.equal(day.entries[0].portionConfirmed, true);
+
+  assert.equal((await api(`/api/entries/${created.id}`, {
+    method: 'PUT', headers: b.auth, body: JSON.stringify({ items: [item] })
+  })).status, 404, 'another device must not edit this entry');
+});
+
+test('an edit that empties the entry is refused', async () => {
+  const { auth } = await registerDevice();
+  const created = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-26',
+      items: [{ name: 'x', grams: 10, per: { calories: 1, protein: 0, fat: 0, carbs: 0 } }]
+    })
+  })).json();
+
+  const res = await api(`/api/entries/${created.id}`, {
+    method: 'PUT', headers: auth, body: JSON.stringify({ items: [] })
+  });
+  assert.equal(res.status, 400);
+});

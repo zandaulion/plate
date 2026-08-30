@@ -83,6 +83,7 @@ Configuration, all via environment:
 |---|---|
 | `GEMINI_API_KEY` | required for photo analysis; without it the app runs and `/api/analyse` returns 503 |
 | `GEMINI_MODEL` | defaults to `gemini-3.7-flash` |
+| `USDA_API_KEY` | optional; removes the demo key's hourly cap on generic food search |
 | `DATA_DIR` | SQLite database and photo files |
 | `PORT`, `BIND_HOST` | `BIND_HOST` stays on loopback unless set; the container sets it explicitly |
 
@@ -103,10 +104,45 @@ secrets from an environment file outside this repo.
 Bump `CACHE_NAME` in `web/sw.js` on every shell change, or installed clients
 keep serving the old build.
 
+## Adding food without a photo
+
+A photo is not the only way in, and should not be: logging a banana should not
+require photographing it.
+
+* **Barcode** — Open Food Facts, looked up by scanning with the browser's
+  `BarcodeDetector` or by typing the number. Exact, free, and cached, so the
+  yoghurt you scan every morning costs one network call ever.
+* **Search** — USDA FoodData Central for generic whole foods, Open Food Facts
+  for packaged ones, merged and re-ranked. Open Food Facts alone is a poor
+  generic index: searching *banana* there returns banana yoghurt and banana
+  chips before fruit, which is why USDA is queried alongside it and unbranded
+  results are ranked up.
+
+USDA works out of the box on its `DEMO_KEY`, capped at about 30 requests an
+hour per IP; running dry degrades to packaged-food results rather than failing.
+Set `USDA_API_KEY` to a free key to remove the cap.
+
+**Database items carry no photo-error band.** The measured ranges apply to
+what a model read off a photograph; a scanned barcode's nutrition is exact, and
+its only uncertainty is the weight entered. A meal mixing both shows a band
+around the photographed part only.
+
+**Records are checked for physical possibility before use.** Crowd-sourced
+databases contain entries with kilojoules in the kcal field or per-package
+figures in a per-100 g field; one *olive oil* record claimed 6,209 kcal per
+100 g. Nothing above ~900 kcal/100 g is edible, so such records are dropped
+rather than logged.
+
+## One editor, three ways in
+
+The same sheet handles a photo estimate, a search-built meal, and editing
+something already saved. The weight slider appears only when part of the meal
+came from a photo — for database items the grams were entered deliberately, so
+a proportional rescale would fight the user.
+
 ## Not built yet
 
-* Barcode scanning against Open Food Facts — exact for packaged food, costs
-  nothing per scan, and needs no model call.
-* Editing a saved entry. Entries can currently be deleted and re-added.
 * Any history beyond `/api/days`; there is no chart or trend view.
 * Offline logging. The shell is cached, but an entry needs the network.
+* Replacing the photo on an existing entry.
+* Recent and favourite foods, which would cut most repeat searches.

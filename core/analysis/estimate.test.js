@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fromModelResponse, totalsOf, rangesOf, setItemGrams, setTotalGrams,
-  removeItem, addManualItem, itemMacros, ERROR_BANDS
+  removeItem, addManualItem, itemMacros, ERROR_BANDS, hasPhotoItems
 } from './estimate.js';
 
 const RESPONSE = {
@@ -119,4 +119,39 @@ test('removeItem drops exactly one item', () => {
   const after = removeItem(e, e.items[0].id);
   assert.equal(after.items.length, 1);
   assert.equal(after.items[0].name, 'white rice');
+});
+
+test('a database item carries no photo-error band', () => {
+  const e = addManualItem({ items: [], portionConfirmed: false }, {
+    name: 'Greek yoghurt', grams: 200,
+    per100: { calories: 97, protein: 9, fat: 5, carbs: 3.6 }
+  });
+  const r = rangesOf(e);
+  assert.equal(r.calories.value, 194);
+  assert.equal(r.calories.low, 194, 'a scanned food must not be widened by photo error');
+  assert.equal(r.calories.high, 194);
+  assert.equal(r.calories.confidence, 'exact');
+});
+
+test('a mixed meal bands only the photographed part', () => {
+  const photo = fromModelResponse(RESPONSE);            // 508 kcal, from a photo
+  const mixed = addManualItem(photo, {
+    name: 'Greek yoghurt', grams: 200,
+    per100: { calories: 100, protein: 9, fat: 5, carbs: 4 }
+  });                                                    // +200 kcal, exact
+
+  const r = rangesOf(mixed);
+  assert.equal(r.calories.value, 708);
+  // The 200 exact kcal sit outside the band; only the 508 are widened.
+  assert.equal(r.calories.low, Math.round(200 + 508 * (1 - ERROR_BANDS.raw.calories)));
+  assert.equal(r.calories.high, Math.round(200 + 508 * (1 + ERROR_BANDS.raw.calories)));
+});
+
+test('hasPhotoItems distinguishes the two kinds of estimate', () => {
+  assert.equal(hasPhotoItems(fromModelResponse(RESPONSE)), true);
+  const manual = addManualItem({ items: [] }, {
+    name: 'apple', grams: 150, per100: { calories: 52, protein: 0, fat: 0, carbs: 14 }
+  });
+  assert.equal(hasPhotoItems(manual), false);
+  assert.equal(hasPhotoItems({ items: [] }), false);
 });

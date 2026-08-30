@@ -333,3 +333,53 @@ input[type="range"]::-moz-range-thumb {
 }
 @keyframes spin { to { transform: rotate(360deg) } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s } }
+
+/* ------------------------------------------------ secondary add action */
+
+/* Sits beside the camera rather than inside a menu: adding a food by name is
+   the second-most common action, not an advanced one. */
+.fab-small {
+  position: fixed; right: 94px; bottom: max(26px, calc(env(safe-area-inset-bottom) + 6px));
+  width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2);
+  display: grid; place-items: center; box-shadow: var(--shadow); z-index: 6;
+}
+.fab-small:active { transform: scale(.96); }
+
+/* ---------------------------------------------------------- food finder */
+
+.finder { margin: 18px 0 8px; }
+.finder-row { display: flex; gap: 8px; align-items: center; }
+.finder-row input { flex: 1; }
+.finder-row .icon-btn {
+  flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface);
+  width: 46px; height: 46px;
+}
+
+.results { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.results:empty { margin: 0; }
+.result {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 11px; padding: 10px 12px; text-align: left; width: 100%;
+}
+.result-name { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
+.result-meta { grid-column: 1; color: var(--ink-3); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.result-add { color: var(--accent); font-weight: 700; font-size: 1.25rem; grid-row: 1 / span 2; }
+.result .src {
+  display: inline-block; font-size: .66rem; letter-spacing: .05em; text-transform: uppercase;
+  border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 6px;
+  color: var(--ink-3);
+}
+
+/* The day list is tappable to edit, so it needs to look it. */
+.entry { cursor: pointer; }
+.entry:active { background: var(--sunken); }
+.entry-del { cursor: pointer; }
+
+/* Full-screen barcode viewfinder. Tapping anywhere cancels, so there is no
+   way to get stuck with the camera running. */
+.scanner {
+  position: fixed; inset: 0; z-index: 60;
+  width: 100%; height: 100%; object-fit: cover; background: #000;
+}
