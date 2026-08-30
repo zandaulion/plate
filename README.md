@@ -133,6 +133,23 @@ figures in a per-100 g field; one *olive oil* record claimed 6,209 kcal per
 100 g. Nothing above ~900 kcal/100 g is edible, so such records are dropped
 rather than logged.
 
+## The back gesture
+
+Overlays are history entries, so the Android back gesture closes the top one
+instead of leaving the app. Dismiss buttons do not close anything directly;
+they unwind history and let the resulting `popstate` do the closing, so both
+gestures follow one path and the history depth cannot drift from the visible
+stack.
+
+Day navigation is deliberately excluded — walking back through yesterday and
+the day before would make the gesture unpredictable.
+
+Two hazards this has to handle, both found by testing rather than reasoning:
+a double tap on a close button would otherwise unwind twice and drop the user
+out of the app, and the barcode overlay must register itself *before* the
+camera warms up, or a back press during that window closes the sheet
+underneath and leaves the camera running.
+
 ## One editor, three ways in
 
 The same sheet handles a photo estimate, a search-built meal, and editing

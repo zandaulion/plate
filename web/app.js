@@ -66,6 +66,62 @@ function toast(message) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
 }
 
+// ------------------------------------------------------------ navigation
+
+/**
+ * Makes the Android back gesture close the top screen instead of leaving the
+ * app.
+ *
+ * Every overlay pushes a history entry when it opens, and the browser's back
+ * navigation is what closes it. Dismiss buttons do not close anything
+ * directly -- they call history.go(), and the resulting popstate does the
+ * closing. Routing both gestures through the same path is what keeps the
+ * history depth and the visible stack from drifting apart, which is how these
+ * end up closing two sheets at once or leaving a stranded entry that swallows
+ * the next back.
+ *
+ * Day navigation deliberately stays out of this: walking back through
+ * yesterday, then the day before, would make the gesture unpredictable.
+ */
+const screens = [];
+
+function openScreen(name, close) {
+  screens.push({ name, close });
+  history.pushState({ plateScreen: name, depth: screens.length }, '');
+}
+
+/** User-initiated dismissal: unwind history, and let popstate do the closing. */
+function dismissScreen(name) {
+  // Skipping screens already on their way out matters: history.go() is
+  // asynchronous, so a double tap on a close button -- or a tap that also
+  // lands on the backdrop -- would otherwise unwind twice and drop the user
+  // out of the app entirely.
+  const index = screens.findIndex((s) => s.name === name && !s.dismissing);
+  if (index === -1) return;
+  for (let i = index; i < screens.length; i++) screens[i].dismissing = true;
+  history.go(-(screens.length - index));
+}
+
+/** Whether a screen is currently open and not already closing. */
+function screenIsOpen(name) {
+  return screens.some((s) => s.name === name && !s.dismissing);
+}
+
+window.addEventListener('popstate', () => {
+  // Anything deeper than the entry we landed on is now closed. Unwinding from
+  // the top down means a nested screen (the scanner over the sheet) closes in
+  // the order it was opened.
+  const depth = history.state?.depth || 0;
+  while (screens.length > depth) {
+    const screen = screens.pop();
+    try {
+      screen.close();
+    } catch (err) {
+      console.error('failed to close screen', screen.name, err);
+    }
+  }
+});
+
 // ------------------------------------------------------------------ gate
 
 function showGate() {
@@ -271,6 +327,10 @@ $('file-input').addEventListener('change', async (ev) => {
 
   try {
     state.photo = await prepareImage(file);
+    // The user can back out while the photo is being read or analysed. Every
+    // resumption point checks the sheet is still open, so a cancelled capture
+    // cannot repopulate a closed sheet or leave stale state behind it.
+    if (!screenIsOpen('review')) return;
     $('review-photo').src = state.photo.objectUrl;
 
     setStatus('<span class="spinner"></span>Working out what is on the plate…');
@@ -278,6 +338,7 @@ $('file-input').addEventListener('change', async (ev) => {
       method: 'POST',
       body: JSON.stringify({ image: state.photo.base64, mimeType: state.photo.mimeType })
     });
+    if (!screenIsOpen('review')) return;
 
     state.estimate = data.estimate;
     state.meal = guessMeal();
@@ -285,6 +346,7 @@ $('file-input').addEventListener('change', async (ev) => {
     initWeightSlider();
     renderReview();
   } catch (err) {
+    if (!screenIsOpen('review')) return;
     if (err.code === 'not_food') {
       setStatus(err.note || 'That does not look like food. Try another photo.', true);
     } else if (err.code === 'nothing_found') {
@@ -361,10 +423,12 @@ function openReview(mode, entry = null) {
   }
 
   $('review').hidden = false;
+  openScreen('review', teardownReview);
   if (mode === 'manual') setTimeout(() => $('food-q').focus(), 120);
 }
 
-function closeReview() {
+/** Tears the sheet down. Only ever called by the navigation layer. */
+function teardownReview() {
   if (state.photo?.objectUrl) URL.revokeObjectURL(state.photo.objectUrl);
   state.estimate = null;
   state.photo = null;
@@ -373,6 +437,7 @@ function closeReview() {
   $('review').hidden = true;
 }
 
+const closeReview = () => dismissScreen('review');
 $('review-close').addEventListener('click', closeReview);
 $('review').addEventListener('click', (ev) => { if (ev.target === $('review')) closeReview(); });
 $('add-food-btn').addEventListener('click', () => openReview('manual'));
@@ -605,17 +670,35 @@ $('scan-btn').addEventListener('click', async () => {
   video.className = 'scanner';
   video.playsInline = true;
   video.srcObject = stream;
+
+  // The camera must be released however the scanner goes away -- back
+  // gesture, tap, timeout or a successful scan -- so teardown lives in one
+  // place and the navigation layer owns when it runs.
+  const teardown = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    video.remove();
+  };
+
+  // Registered before the overlay is on screen and before play() is awaited.
+  // Doing it afterwards leaves a window -- however brief, and it is not brief
+  // while a phone camera warms up -- where the viewfinder is covering the app
+  // but the back gesture would close the sheet underneath it and leave the
+  // camera running.
   document.body.appendChild(video);
-  await video.play();
+  openScreen('scanner', teardown);
+
+  try {
+    await video.play();
+  } catch {
+    // Autoplay refused. The stream is still attached, so the frame grab below
+    // may still work; if it does not, the timeout ends the scan cleanly.
+  }
 
   const detector = new window.BarcodeDetector({
     formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
   });
 
-  const stop = () => {
-    stream.getTracks().forEach((t) => t.stop());
-    video.remove();
-  };
+  const stop = () => dismissScreen('scanner');
   video.addEventListener('click', stop);
 
   const deadline = Date.now() + 20000;
@@ -711,9 +794,15 @@ function showMaintenanceResult(m) {
     This is an estimate from a population formula, not a measurement.`;
 }
 
-$('open-profile').addEventListener('click', () => { fillProfile(); $('profile').hidden = false; });
-$('profile-close').addEventListener('click', () => { $('profile').hidden = true; });
-$('profile').addEventListener('click', (ev) => { if (ev.target === $('profile')) $('profile').hidden = true; });
+const closeProfile = () => dismissScreen('profile');
+
+$('open-profile').addEventListener('click', () => {
+  fillProfile();
+  $('profile').hidden = false;
+  openScreen('profile', () => { $('profile').hidden = true; });
+});
+$('profile-close').addEventListener('click', closeProfile);
+$('profile').addEventListener('click', (ev) => { if (ev.target === $('profile')) closeProfile(); });
 
 $('profile-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
