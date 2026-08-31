@@ -268,6 +268,20 @@ belongs in an app that refuses to prescribe.
 
 ## Weight
 
+Weighing in is on the day view, not in settings — it is a daily action and the
+input the expenditure estimate depends on, so burying it beside account
+configuration made the one thing the algorithm needs the hardest thing to do.
+
+The row asks while the day has no reading and reports the value and trend once
+it does, so it stops being a prompt rather than becoming a nag. It can be
+dismissed for the day, and a past day with no reading never asks at all.
+
+Tapping it opens a stepper **pre-filled from the most recent reading**, with
+±100 g buttons. Weight moves slowly, so yesterday's number is nearly always
+within a nudge of today's; typing four digits every morning throws that away.
+Nothing is autofocused, so the common case raises no keyboard. The field stays
+typable for when it has genuinely moved.
+
 Stored as a series, one reading per calendar day, rather than the single
 scalar `profiles.weight_kg` — a trend is what the expenditure estimate
 consumes and a scalar cannot express one. Weighing twice in a morning replaces

@@ -355,8 +355,21 @@ app.get('/api/entries', requireDevice, (req, res) => {
   const expenditure = expenditureFor(req.device.account_id);
   const summary = summariseDay(rows, expenditure.available ? expenditure : null);
 
+  // Weight rides along with the day rather than being a second request: the
+  // day view now offers weighing in, and a prompt that arrives after the rest
+  // of the screen has painted would flicker into place.
+  const weights = weightRows(req.device.account_id, 60);
+  const todays = weights.find((w) => w.day === day) || null;
+
   res.json({
-    day, entries: rows, summary, expenditure, split: macroSplit(summary.totals)
+    day, entries: rows, summary, expenditure, split: macroSplit(summary.totals),
+    weight: {
+      today: todays ? todays.kg : null,
+      // What to pre-fill with when there is no reading yet. Weight moves
+      // slowly, so the last one is nearly always within a nudge of the answer.
+      last: weights.length ? weights[weights.length - 1].kg : null,
+      trend: weightTrend(weights)
+    }
   });
 });
 

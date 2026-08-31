@@ -566,3 +566,55 @@ input[type="range"]::-moz-range-thumb {
 .manual-grid label { display: flex; flex-direction: column; gap: 5px;
   font-size: .82rem; font-weight: 600; color: var(--ink-2); }
 .warn-text { color: var(--warn); }
+
+
+/* ------------------------------------------------------------- weigh-in */
+
+.weigh {
+  margin-top: 12px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.weigh-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 13px 14px; border: 0; background: none;
+  color: var(--ink); text-align: left; font: inherit;
+}
+.weigh-row .ico { flex: 0 0 auto; color: var(--ink-3); display: grid; place-items: center; }
+.weigh-row .lab { flex: 1; font-weight: 600; font-size: .94rem; }
+.weigh-row .val {
+  font-weight: 700; font-variant-numeric: tabular-nums; font-size: .98rem;
+}
+.weigh-row .val.dim { color: var(--ink-3); font-weight: 600; }
+.weigh-row .sub { display: block; font-weight: 500; font-size: .78rem; color: var(--ink-3); margin-top: 2px; }
+.weigh-row .chev { color: var(--ink-3); font-size: 1.35rem; line-height: 1; margin-left: 2px; }
+.weigh-dismiss {
+  border: 0; background: none; color: var(--ink-3); font-size: 1.1rem;
+  padding: 10px 12px; align-self: stretch;
+}
+
+/* The editor replaces the row in place rather than opening a sheet: weighing
+   in is a two-tap action and a sheet would cost more taps than the entry. */
+.weigh-edit { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.weigh-stepper { display: flex; align-items: center; gap: 10px; }
+.weigh-stepper button.step {
+  width: 52px; height: 52px; flex: 0 0 auto; border-radius: 14px;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); font-size: 1.5rem; line-height: 1;
+}
+.weigh-stepper button.step:active { background: var(--sunken); }
+.weigh-field {
+  flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  padding: 8px 10px;
+}
+.weigh-field input {
+  width: 4.2ch; text-align: right; font-size: 1.5rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; padding: 2px 0; border: 0; background: none;
+}
+.weigh-field input:focus { outline: none; }
+.weigh-field:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.weigh-field .unit { color: var(--ink-3); font-size: .95rem; font-weight: 600; }
+.weigh-actions { display: flex; gap: 8px; }
+.weigh-actions .primary { flex: 1; }
+.weigh-actions .secondary { flex: 0 0 auto; width: auto; padding-inline: 20px; }
+.weigh-why { color: var(--ink-3); font-size: .8rem; margin: 0; line-height: 1.4; }

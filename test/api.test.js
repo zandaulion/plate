@@ -840,3 +840,33 @@ test('a revoked device is hidden from the account that owns it', async () => {
   const mine = await (await api('/api/devices', { headers: auth })).json();
   assert.ok(!mine.devices.some((d) => d.id === spare.id), 'the owner should not see a dead device');
 });
+
+test('the day payload carries what the weigh-in row needs', async () => {
+  const { auth } = await registerDevice();
+  const today = new Date().toISOString().slice(0, 10);
+
+  let day = await (await api(`/api/entries?day=${today}`, { headers: auth })).json();
+  assert.equal(day.weight.today, null, 'nothing logged yet');
+  assert.equal(day.weight.last, null, 'and nothing to pre-fill from');
+
+  // A reading from an earlier day is what the row should offer as a default.
+  const earlier = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+  await api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day: earlier, kg: 78.4 }) });
+
+  day = await (await api(`/api/entries?day=${today}`, { headers: auth })).json();
+  assert.equal(day.weight.today, null, 'still nothing for today');
+  assert.equal(day.weight.last, 78.4, 'so the row pre-fills from the most recent');
+
+  await api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day: today, kg: 78.6 }) });
+  day = await (await api(`/api/entries?day=${today}`, { headers: auth })).json();
+  assert.equal(day.weight.today, 78.6, 'once logged the row reports instead of asking');
+});
+
+test('a past day reports its own weight, not the latest', async () => {
+  const { auth } = await registerDevice();
+  for (const [day, kg] of [['2026-08-04', 80], ['2026-08-05', 79.5]]) {
+    await api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day, kg }) });
+  }
+  const day = await (await api('/api/entries?day=2026-08-04', { headers: auth })).json();
+  assert.equal(day.weight.today, 80, 'the row must reflect the day being viewed');
+});

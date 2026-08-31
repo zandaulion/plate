@@ -322,6 +322,7 @@ async function loadDay() {
   renderMaintenance(data.summary, data.expenditure);
   renderSplit(data.split);
   renderMacros($('macros'), data.summary.totals);
+  renderWeigh(state.day, data.weight, data.expenditure);
   renderEntries(data.entries);
 }
 
@@ -348,6 +349,139 @@ $('entries').addEventListener('click', async (ev) => {
   const entry = id && state.entriesById?.get(id);
   if (entry) openReview('edit', entry);
 });
+
+// --------------------------------------------------------------- weigh-in
+
+// A dial and a needle, not a box with an arrow -- the first attempt read as
+// an upload icon at 20px, which is the only size it is ever drawn at.
+const SCALE_ICON = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+  <rect x="3.4" y="4.6" width="17.2" height="14.8" rx="3.6" fill="none"
+        stroke="currentColor" stroke-width="1.7"/>
+  <path d="M8.2 14.4a3.8 3.8 0 0 1 7.6 0" fill="none" stroke="currentColor"
+        stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M12 14.4l2.4-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+</svg>`;
+
+/**
+ * Days the prompt has been dismissed on. Someone who only wants to log food
+ * should be able to make the ask go away without it returning until tomorrow.
+ */
+const dismissedKey = 'plate.weigh.dismissed';
+const isDismissed = (day) => {
+  try { return localStorage.getItem(dismissedKey) === day; } catch { return false; }
+};
+const dismiss = (day) => {
+  try { localStorage.setItem(dismissedKey, day); } catch {}
+};
+
+const roundKg = (v) => Math.round(v * 10) / 10;
+
+function renderWeigh(day, weight, expenditure) {
+  const el = $('weigh');
+  const isToday = day === localDayKey();
+
+  // A past day can still be corrected, but it should never nag: the prompt is
+  // for the day you are actually living through.
+  if (weight?.today === null && (!isToday || isDismissed(day))) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+
+  if (weight?.today !== null && weight?.today !== undefined) {
+    const t = weight.trend;
+    const sub = t
+      ? `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week`
+      : 'a trend needs 3 weigh-ins over a week';
+    el.innerHTML = `
+      <button class="weigh-row" type="button" id="weigh-open">
+        <span class="ico">${SCALE_ICON}</span>
+        <span class="lab">${isToday ? 'Weighed in today' : 'Weight that day'}
+          <span class="sub">${esc(sub)}</span></span>
+        <span class="val">${weight.today.toFixed(1)} kg</span>
+        <span class="chev" aria-hidden="true">&rsaquo;</span>
+      </button>`;
+  } else {
+    // Progress is shown here because this is where the ask is made: a prompt
+    // with a visible reason is a different thing from a chore.
+    const p = expenditure?.method !== 'measured' ? expenditure?.progress : null;
+    const left = p && p.weighings < p.neededWeighings ? p.neededWeighings - p.weighings : 0;
+    const sub = left
+      ? `${left} more and this becomes a measurement`
+      : 'keeps the estimate honest';
+    el.innerHTML = `
+      <div style="display:flex;align-items:center">
+        <button class="weigh-row" type="button" id="weigh-open">
+          <span class="ico">${SCALE_ICON}</span>
+          <span class="lab">Weigh in<span class="sub">${esc(sub)}</span></span>
+          <span class="val dim">${weight?.last ? `${weight.last.toFixed(1)} kg` : ''}</span>
+          <span class="chev" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="weigh-dismiss" type="button" id="weigh-skip"
+                aria-label="Not today">&times;</button>
+      </div>`;
+    $('weigh-skip').addEventListener('click', () => { dismiss(day); renderWeigh(day, weight, expenditure); });
+  }
+
+  $('weigh-open').addEventListener('click', () => openWeighEditor(day, weight));
+}
+
+/**
+ * Replaces the row with a stepper, pre-filled from the most recent reading.
+ *
+ * Weight moves slowly, so yesterday's number is nearly always within a nudge
+ * of today's -- which means the common case should not raise a keyboard at
+ * all. The field stays typable for the times it has genuinely moved.
+ */
+function openWeighEditor(day, weight) {
+  const el = $('weigh');
+  const start = weight?.today ?? weight?.last ?? 75;
+
+  el.innerHTML = `
+    <div class="weigh-edit">
+      <div class="weigh-stepper">
+        <button class="step" type="button" id="w-down" aria-label="Lower by 100 grams">&minus;</button>
+        <label class="sr-only" for="w-value">Weight in kilograms</label>
+        <span class="weigh-field">
+          <input id="w-value" type="number" inputmode="decimal" step="0.1" min="20" max="400"
+                 value="${roundKg(start).toFixed(1)}">
+          <span class="unit">kg</span>
+        </span>
+        <button class="step" type="button" id="w-up" aria-label="Raise by 100 grams">+</button>
+      </div>
+      <div class="weigh-actions">
+        <button class="primary" type="button" id="w-commit">Save</button>
+        <button class="secondary" type="button" id="w-cancel">Cancel</button>
+      </div>
+      <p class="weigh-why">Starts from your last reading — nudge it rather than typing.</p>
+    </div>`;
+
+  const field = $('w-value');
+  const nudge = (delta) => {
+    const next = roundKg((Number(field.value) || start) + delta);
+    field.value = Math.min(400, Math.max(20, next)).toFixed(1);
+  };
+  $('w-down').addEventListener('click', () => nudge(-0.1));
+  $('w-up').addEventListener('click', () => nudge(0.1));
+  $('w-cancel').addEventListener('click', () => loadDay());
+
+  $('w-commit').addEventListener('click', async () => {
+    const kg = Number(String(field.value).replace(',', '.'));
+    if (!Number.isFinite(kg) || kg < 20 || kg > 400) return toast('That weight looks wrong.');
+    $('w-commit').disabled = true;
+    try {
+      await api('/api/weights', {
+        method: 'PUT',
+        body: JSON.stringify({ day, kg, at: new Date().toISOString() })
+      });
+      toast('Weight logged');
+      await loadDay();
+    } catch (err) {
+      $('w-commit').disabled = false;
+      toast(err.message);
+    }
+  });
+}
 
 // ------------------------------------------------------------- capturing
 
