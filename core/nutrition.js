@@ -68,6 +68,28 @@ export function maintenanceEnergy(profile) {
   };
 }
 
+/**
+ * Which details are still needed before maintenance energy can be computed.
+ *
+ * Named rather than counted, so the app can say what is missing instead of
+ * "complete your profile". Sex is deliberately absent: it is optional, and
+ * leaving it out widens the band rather than blocking the calculation.
+ */
+export const MAINTENANCE_FIELDS = [
+  { id: 'weightKg', label: 'weight' },
+  { id: 'heightCm', label: 'height' },
+  { id: 'ageYears', label: 'age' },
+  { id: 'activity', label: 'how active you are' }
+];
+
+export function missingForMaintenance(profile) {
+  return MAINTENANCE_FIELDS.filter(({ id }) => {
+    const v = profile?.[id];
+    if (id === 'activity') return !activityFactor(v);
+    return !(Number.isFinite(v) && v > 0);
+  });
+}
+
 /** Sum a list of {calories, protein, fat, carbs} into one total. */
 export function sumMacros(rows) {
   const t = { calories: 0, protein: 0, fat: 0, carbs: 0 };

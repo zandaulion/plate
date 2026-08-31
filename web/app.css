@@ -618,3 +618,22 @@ input[type="range"]::-moz-range-thumb {
 .weigh-actions .primary { flex: 1; }
 .weigh-actions .secondary { flex: 0 0 auto; width: auto; padding-inline: 20px; }
 .weigh-why { color: var(--ink-3); font-size: .8rem; margin: 0; line-height: 1.4; }
+
+
+/* --------------------------------------------------------------- banner */
+
+.banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 14px;
+}
+.banner .ico { flex: 0 0 auto; color: var(--warn); margin-top: 1px; }
+.banner .body { flex: 1; min-width: 0; }
+.banner h2 { margin: 0 0 3px; font-size: .95rem; font-weight: 650; }
+.banner p { margin: 0; font-size: .85rem; line-height: 1.45; color: var(--ink-2); }
+.banner .act {
+  margin-top: 10px; padding: 9px 16px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); font-weight: 600; font-size: .86rem;
+}

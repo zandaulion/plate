@@ -870,3 +870,40 @@ test('a past day reports its own weight, not the latest', async () => {
   const day = await (await api('/api/entries?day=2026-08-04', { headers: auth })).json();
   assert.equal(day.weight.today, 80, 'the row must reflect the day being viewed');
 });
+
+test('the formula uses the latest weight reading, not the one typed at signup', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 90, heightCm: 180, ageYears: 30, sex: 'male', activity: 'moderate' })
+  });
+  const before = (await (await api('/api/me', { headers: auth })).json()).maintenance.kcal;
+  assert.equal(before, Math.round((10 * 90 + 6.25 * 180 - 5 * 30 + 5) * 1.55));
+
+  // Four kilos lighter, on the scale. The stored profile still says 90.
+  await api('/api/weights', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ day: new Date().toISOString().slice(0, 10), kg: 86 })
+  });
+
+  const me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.profile.weightKg, 90, 'the stated value is left alone');
+  assert.equal(me.maintenance.kcal, Math.round((10 * 86 + 6.25 * 180 - 5 * 30 + 5) * 1.55),
+    'but the maths uses what the scale said');
+});
+
+test('expenditure reports which profile details are still missing', async () => {
+  const { auth } = await registerDevice();
+  let exp = await (await api('/api/expenditure', { headers: auth })).json();
+  assert.deepEqual(exp.profileMissing.map((f) => f.id),
+    ['weightKg', 'heightCm', 'ageYears', 'activity']);
+  assert.equal(exp.available, false);
+
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 80, heightCm: 180, ageYears: 30, activity: 'light' })
+  });
+  exp = await (await api('/api/expenditure', { headers: auth })).json();
+  assert.deepEqual(exp.profileMissing, [], 'sex is not required');
+  assert.equal(exp.available, true);
+});

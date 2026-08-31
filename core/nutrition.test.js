@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   basalRate, maintenanceEnergy, activityFactor,
-  sumMacros, caloriesFromMacros, macroAgreement, KCAL_PER_G
+  sumMacros, caloriesFromMacros, macroAgreement, KCAL_PER_G, missingForMaintenance
 } from './nutrition.js';
 
 test('basalRate matches Mifflin-St Jeor worked examples', () => {
@@ -70,4 +70,28 @@ test('macroAgreement flags a model contradicting itself', () => {
   assert.ok(macroAgreement({ calories: 290, protein: 20, fat: 10, carbs: 30 }) < 0.01);
   assert.ok(macroAgreement({ calories: 150, protein: 20, fat: 10, carbs: 30 }) > 0.5);
   assert.equal(macroAgreement({ calories: 0, protein: 1, fat: 1, carbs: 1 }), null);
+});
+
+test('missingForMaintenance names what is absent, not how many', () => {
+  assert.deepEqual(missingForMaintenance(null).map((f) => f.id),
+    ['weightKg', 'heightCm', 'ageYears', 'activity']);
+
+  assert.deepEqual(
+    missingForMaintenance({ weightKg: 80, activity: 'light' }).map((f) => f.id),
+    ['heightCm', 'ageYears']);
+
+  assert.deepEqual(
+    missingForMaintenance({ weightKg: 80, heightCm: 180, ageYears: 30, activity: 'light' }), []);
+});
+
+test('sex is not required, because leaving it out only widens the band', () => {
+  const complete = { weightKg: 80, heightCm: 180, ageYears: 30, activity: 'light' };
+  assert.deepEqual(missingForMaintenance(complete), []);
+  assert.ok(maintenanceEnergy(complete).kcal > 0, 'and the figure is still computable');
+});
+
+test('an unrecognised activity counts as missing rather than passing through', () => {
+  const p = { weightKg: 80, heightCm: 180, ageYears: 30, activity: 'occasionally' };
+  assert.deepEqual(missingForMaintenance(p).map((f) => f.id), ['activity']);
+  assert.equal(maintenanceEnergy(p), null);
 });

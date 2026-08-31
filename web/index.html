@@ -43,6 +43,11 @@
   </header>
 
   <main id="day-view" class="view">
+    <!-- Shown only while the app genuinely cannot work out what you burn.
+         It disappears for good once the estimate is measured from your own
+         data, because at that point the profile no longer feeds it. -->
+    <section id="profile-banner" class="banner" hidden></section>
+
     <section class="totals" aria-labelledby="totals-heading">
       <h2 id="totals-heading" class="sr-only">Day total</h2>
       <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>

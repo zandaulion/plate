@@ -141,6 +141,25 @@ app.post('/api/auth/logout', (req, res) => {
 
 // --------------------------------------------------------------- profile
 
+/**
+ * The profile as the maths should see it.
+ *
+ * `profiles.weight_kg` is whatever was typed at sign-up and is never revised,
+ * so someone who has since logged themselves four kilos lighter would still
+ * have their expenditure computed from the old figure. A reading on the scale
+ * beats a number remembered months ago, so the most recent one wins when there
+ * is one. The stated value is left untouched -- it is the user's, not ours to
+ * overwrite.
+ */
+function effectiveProfile(accountId) {
+  const profile = profileFor(accountId);
+  if (!profile) return null;
+  const latest = db.prepare(
+    'SELECT kg FROM weights WHERE account_id = ? ORDER BY day DESC LIMIT 1'
+  ).get(accountId);
+  return latest ? { ...profile, weightKg: latest.kg, weightFromReading: true } : profile;
+}
+
 function profileFor(accountId) {
   const row = db.prepare('SELECT * FROM profiles WHERE account_id = ?').get(accountId);
   if (!row) return null;
@@ -165,7 +184,7 @@ app.get('/api/me', requireDevice, (req, res) => {
     deviceId: req.device.id,
     label: req.device.label,
     profile,
-    maintenance: profile ? maintenanceEnergy(profile) : null,
+    maintenance: maintenanceEnergy(effectiveProfile(req.device.account_id)),
     expenditure: expenditureFor(req.device.account_id),
     activityLevels: ACTIVITY_LEVELS,
     meals: MEALS,
@@ -514,7 +533,7 @@ function expenditureFor(accountId) {
   return adaptiveExpenditure({
     entries,
     weights: weightRows(accountId, 40),
-    profile: profileFor(accountId)
+    profile: effectiveProfile(accountId)
   });
 }
 

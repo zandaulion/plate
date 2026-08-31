@@ -20,7 +20,7 @@
 // approach belongs in this app at all.
 
 import { weightTrend } from './weight.js';
-import { maintenanceEnergy } from './nutrition.js';
+import { maintenanceEnergy, missingForMaintenance } from './nutrition.js';
 import { ERROR_BANDS, portionSourceOf } from './analysis/estimate.js';
 
 /**
@@ -136,6 +136,10 @@ export function adaptiveExpenditure({ entries = [], weights = [], profile = null
       method: 'formula',
       ...(formula || {}),
       available: Boolean(formula),
+      // What the *profile* still lacks, as opposed to what the measurement
+      // lacks. The two are different asks and get answered in different
+      // places, so they are reported separately.
+      profileMissing: missingForMaintenance(profile),
       missing,
       progress: {
         loggedDays: logged.length,

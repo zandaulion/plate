@@ -224,6 +224,24 @@ something already saved. The weight slider appears only when part of the meal
 came from a photo — for database items the grams were entered deliberately, so
 a proportional rescale would fight the user.
 
+## Asking for the profile
+
+A banner appears on the day view only while expenditure genuinely cannot be
+computed, and it names the fields that are missing rather than saying "complete
+your profile". Sex is never demanded: leaving it out widens the band rather
+than blocking the calculation.
+
+It disappears for good once the estimate is measured from logged intake and
+weight, because at that point the profile stops feeding the calculation at all.
+A banner still asking for details the app no longer uses would be a nag with no
+purpose.
+
+**The formula uses the most recent weight reading, not the one typed at
+sign-up.** `profiles.weight_kg` was never revised, so someone who had logged
+themselves four kilos lighter still had their expenditure computed from the old
+figure. A reading on the scale beats a number remembered months ago. The stated
+value is left untouched — it is the user's, not ours to overwrite.
+
 ## What you actually burn
 
 Mifflin-St Jeor estimates expenditure from height, weight, age and sex, then

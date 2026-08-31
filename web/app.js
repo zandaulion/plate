@@ -225,13 +225,56 @@ function shiftDay(key, delta) {
   return localDayKey(date);
 }
 
+/**
+ * Asks for the profile only while its absence actually costs something.
+ *
+ * Once expenditure is measured from logged intake and weight, the profile
+ * stops feeding the calculation entirely -- so a banner still demanding it
+ * would be asking for something the app no longer uses. It names the specific
+ * fields that are missing rather than saying "complete your profile", and it
+ * does not claim the details make the estimate accurate: they make it
+ * possible, and logging is what makes it accurate.
+ */
+function renderProfileBanner(expenditure) {
+  const el = $('profile-banner');
+  const missing = expenditure?.method === 'formula' ? (expenditure.profileMissing || []) : [];
+
+  if (!missing.length) { el.hidden = true; return; }
+
+  const names = missing.map((f) => f.label);
+  const list = names.length > 1
+    ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    : names[0];
+
+  el.hidden = false;
+  el.innerHTML = `
+    <span class="ico" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20">
+        <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7"/>
+        <path d="M12 7.6v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="12" cy="16.1" r="1.05" fill="currentColor"/>
+      </svg>
+    </span>
+    <div class="body">
+      <h2>Add your ${esc(list)}</h2>
+      <p>Without them the app cannot work out what you burn, so a day's total has
+         nothing to sit against. Real numbers, not round ones — the estimate is
+         only as good as what it is given.</p>
+      <button class="act" type="button" id="banner-open">Fill them in</button>
+    </div>`;
+
+  $('banner-open').addEventListener('click', () => $('open-profile').click());
+}
+
 function renderMaintenance(summary, expenditure) {
   const el = $('maintenance');
   const m = summary.maintenance;
 
   if (!m) {
+    // The banner above is already asking; repeating it here would be two
+    // requests for the same thing on one screen.
     el.className = 'maintenance none';
-    el.innerHTML = 'Add your details in <b>&#9881;</b> to see what you burn on an average day.';
+    el.textContent = 'What you burn is not known yet.';
     return;
   }
 
@@ -242,6 +285,15 @@ function renderMaintenance(summary, expenditure) {
   const source = measured
     ? 'measured from your weight and what you logged'
     : 'estimated from your details';
+
+  // Nothing logged is not a deficit -- it is a day that has not been recorded
+  // yet. Reporting "2,294 under" against an empty log states a fast that did
+  // not happen.
+  if (!summary.entries) {
+    el.innerHTML = `You burn about <b>${m.kcal} kcal</b> a day &mdash; ${source},
+      and spanning ${m.low}&ndash;${m.high}.`;
+    return;
+  }
 
   const b = summary.balance;
   if (b?.withinBand) {
@@ -318,6 +370,7 @@ async function loadDay() {
   const data = await api(`/api/entries?day=${state.day}`);
 
   state.expenditure = data.expenditure || null;
+  renderProfileBanner(data.expenditure);
   $('day-kcal').textContent = Math.round(data.summary.totals.calories);
   renderMaintenance(data.summary, data.expenditure);
   renderSplit(data.split);
