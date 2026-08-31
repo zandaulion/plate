@@ -279,6 +279,11 @@ addColumnIfMissing('devices', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
 // nothing; that has to stay true for them no matter what a build does.
 addColumnIfMissing('accounts', 'tracking_enabled', 'INTEGER NOT NULL DEFAULT 0');
 
+// How many times this entry's photograph has been read again. Capped, because
+// a model that has twice failed to place the dish with the eater's own words
+// in front of it will not place it on the third attempt either.
+addColumnIfMissing('entries', 'corrections', 'INTEGER NOT NULL DEFAULT 0');
+
 db.exec(`
   -- Interaction events, for usability testing on a consenting account.
   -- Deliberately small: a name, a few numbers, and never any food photograph
@@ -293,6 +298,34 @@ db.exec(`
     props_json TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_account ON events(account_id, at);
+`);
+
+db.exec(`
+  -- One row per account per day, counting calls that reached the vision model.
+  --
+  -- Counted per account rather than per feature. Reading a photo and re-reading
+  -- it after a correction cost the same, so a limit on either one alone just
+  -- moves the traffic to the other door.
+  CREATE TABLE IF NOT EXISTS ai_usage (
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    day        TEXT NOT NULL,
+    calls      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, day)
+  );
+
+  -- What the model said about one photograph given one correction.
+  --
+  -- Keyed on the photograph and the exact words, so asking the same question
+  -- twice is answered from here. That is the naive retry loop -- the same
+  -- correction sent again because the answer was not liked -- and it should
+  -- not cost anything the second time.
+  CREATE TABLE IF NOT EXISTS analysis_cache (
+    photo_id      TEXT NOT NULL,
+    correction_key TEXT NOT NULL,
+    result_json   TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (photo_id, correction_key)
+  );
 `);
 
 db.exec(`

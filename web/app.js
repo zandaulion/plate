@@ -925,6 +925,7 @@ function openReview(mode, entry = null) {
   state.mode = mode;
   state.editingId = entry?.id || null;
   state.existingPhotoId = entry?.photoId || null;
+  state.corrections = entry?.corrections || 0;
   state.photo = null;
   state.estimate = entry
     ? {
@@ -1005,6 +1006,7 @@ function teardownReview() {
   state.photo = null;
   state.editingId = null;
   state.existingPhotoId = null;
+  state.corrections = 0;
   // A request may still be in flight -- the reply checks whether the sheet is
   // still open and returns without clearing anything, so the overlay has to
   // come down with the sheet or it would outlive it.
@@ -1052,7 +1054,12 @@ function renderReview() {
   // Correctable either from the photo still in memory, or -- for an entry
   // already saved -- from the copy the server kept, which is the case that
   // matters most: a wrong identification is usually spotted after the fact.
-  $('correct-block').hidden = !(photoBased && (state.photo?.base64 || state.existingPhotoId));
+  // Withdrawn once this photograph has been read again twice: a third go is
+  // refused by the server, and an offer that cannot be taken up is worse than
+  // no offer.
+  const correctable = state.photo?.base64
+    || (state.existingPhotoId && (state.corrections || 0) < 2);
+  $('correct-block').hidden = !(photoBased && correctable);
   // Tense follows the meal: a plate in front of you is still being eaten, one
   // logged yesterday is not.
   $('correct-toggle').textContent = state.editingId
@@ -1378,7 +1385,12 @@ $('correct-go').addEventListener('click', async () => {
         });
     if (!screenIsOpen('review')) return;
 
-    track('correct_ok', { seconds: (Date.now() - startedAt) / 1000, items: data.estimate.items.length });
+    track('correct_ok', {
+      seconds: (Date.now() - startedAt) / 1000,
+      items: data.estimate.items.length,
+      repeated: Boolean(data.repeated)
+    });
+    if (!live && !data.repeated) state.corrections = (state.corrections || 0) + 1;
     state.estimate = { ...data.estimate, note: `You said: ${correction}` };
     idle();
     $('correct-form').hidden = true;

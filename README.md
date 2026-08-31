@@ -394,6 +394,39 @@ This is the only recourse for food that no database holds. The bundled table
 has no shawarma, kebab, gyro, seitan or halloumi: USDA is American, Open Food
 Facts is packaged goods, and a restaurant wrap in Bucharest is in neither.
 
+## What a day may cost
+
+The vision model is a cost per call whose timing someone else controls. On the
+PWA that is friends and family and does not matter; as a market product it
+does, and the protection has to sit where the money is spent.
+
+A first read of a photograph measured 1409 prompt and 117 output tokens; a
+correction re-read, 1502 and 126. **A correction costs the same as a fresh
+analysis**, so the allowance is counted per account rather than per feature --
+capping one and not the other only decides which door the traffic uses.
+
+Three limits, in `server/budget.js`:
+
+- **Fifty model calls per account per day.** Set well above honest use rather
+  than close to it: six meals with a couple of corrections is eight calls. A
+  limit a real person reaches by using the app properly is a bug wearing a
+  policy's clothes. Charged before the call and given back only when the model
+  was never reached, so provoking failures is not a cheaper loop.
+- **Two re-reads per photograph.** Justified by the product before the cost: a
+  model that has twice failed to place a dish with the eater's own words in
+  front of it will not place it on the third attempt. The count travels with
+  the entry so the app withdraws the offer rather than letting it be tapped
+  into a refusal.
+- **The same correction, twice, is answered from the first reply.** Sending
+  identical words again is what someone does when they did not like the
+  answer, and it should not cost anything to say that the answer has not
+  changed. Case and spacing are normalised, so it is the question that has to
+  match, not the typing.
+
+None of this addresses the loop that actually matters, which is unlimited
+account creation -- per-account limits mean nothing against scripted signups.
+That is device attestation, and it belongs to the Android build.
+
 ## Typing in a printed panel
 
 When a menu or a label states the numbers, they can be typed in directly,

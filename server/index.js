@@ -29,6 +29,10 @@ import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf, hasPhotoItems
 } from '../core/analysis/estimate.js';
 import { parseResponse } from '../core/analysis/prompt.js';
+import {
+  charge, refund, BudgetError, MAX_CORRECTIONS,
+  cachedAnalysis, cacheAnalysis, forgetPhoto
+} from './budget.js';
 import { maintenanceEnergy, ACTIVITY_LEVELS } from '../core/nutrition.js';
 import { summariseDay, macroSplit, MEALS } from '../core/day.js';
 
@@ -270,9 +274,17 @@ app.post('/api/analyse', requireDevice, asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'no_image', message: 'No photo was received.' });
   }
 
-  const { raw, usage, model } = await analysePhoto(
-    image, mimeType || 'image/jpeg',
-    typeof correction === 'string' ? correction.slice(0, 200) : null);
+  charge(req.device.account_id);
+  let raw, usage, model;
+  try {
+    ({ raw, usage, model } = await analysePhoto(
+      image, mimeType || 'image/jpeg',
+      typeof correction === 'string' ? correction.slice(0, 200) : null));
+  } catch (err) {
+    // Nothing was spent if the request never got as far as the model.
+    if (err.status === 503 || err.status === 429) refund(req.device.account_id);
+    throw err;
+  }
   const parsed = parseResponse(raw);
 
   if (!parsed.ok) {
@@ -423,6 +435,9 @@ function rowToEntry(row) {
     id: row.id, day: row.day, meal: row.meal, createdAt: row.created_at,
     photoId: row.photo_id, note: row.note,
     portionConfirmed: Boolean(row.portion_confirmed),
+    // So the app can retire the correction offer rather than let it be tapped
+    // into a refusal.
+    corrections: row.corrections || 0,
     portionSource: portionSourceOf({
       portionSource: row.portion_source, portionConfirmed: row.portion_confirmed
     }),
@@ -570,10 +585,32 @@ app.post('/api/entries/:id/reanalyse', requireDevice, asyncRoute(async (req, res
   const correction = typeof req.body?.correction === 'string'
     ? req.body.correction.slice(0, 200) : null;
 
-  const { raw, usage, model } = await analysePhoto(
-    fs.readFileSync(file).toString('base64'),
-    row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
-    correction);
+  // Asked before, of this photograph, in these words. Answered from the last
+  // reply rather than by asking again: sending the same correction twice is
+  // what someone does when they did not like the answer, and it costs nothing
+  // to be honest that the answer has not changed.
+  const seen = cachedAnalysis(row.photo_id, correction);
+  if (seen) return res.json({ ...seen, repeated: true });
+
+  if (row.corrections >= MAX_CORRECTIONS) {
+    return res.status(429).json({
+      error: 'corrections_exhausted',
+      message: 'The photo has been read again twice. Another go is unlikely to help — set the food by hand instead.'
+    });
+  }
+
+  charge(req.device.account_id);
+  let raw, usage, model;
+  try {
+    ({ raw, usage, model } = await analysePhoto(
+      fs.readFileSync(file).toString('base64'),
+      row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
+      correction));
+  } catch (err) {
+    if (err.status === 503 || err.status === 429) refund(req.device.account_id);
+    throw err;
+  }
+  db.prepare('UPDATE entries SET corrections = corrections + 1 WHERE id = ?').run(row.id);
   const parsed = parseResponse(raw);
 
   if (!parsed.ok) return res.status(422).json({ error: parsed.reason, note: parsed.note, usage, model });
@@ -583,12 +620,14 @@ app.post('/api/entries/:id/reanalyse', requireDevice, asyncRoute(async (req, res
     return res.status(422).json({ error: 'nothing_found', note: parsed.note, usage, model });
   }
 
-  res.json({
+  const answer = {
     estimate,
     totals: totalsOf(estimate),
     ranges: rangesOf(estimate),
     usage, model
-  });
+  };
+  cacheAnalysis(row.photo_id, correction, answer);
+  res.json(answer);
 }));
 
 app.delete('/api/entries/:id', requireDevice, (req, res) => {
@@ -601,6 +640,7 @@ app.delete('/api/entries/:id', requireDevice, (req, res) => {
     // The photo is the user's; deleting the entry must delete it too, not
     // orphan it on disk.
     try { fs.unlinkSync(path.join(PHOTO_DIR, row.photo_id)); } catch {}
+    forgetPhoto(row.photo_id);
   }
   res.json({ ok: true });
 });
@@ -1022,7 +1062,8 @@ app.delete('/api/admin/accounts/:id', requireAdmin, (req, res) => {
 // ----------------------------------------------------------------- errors
 
 app.use((err, req, res, next) => {
-  if (err instanceof AnalysisError || err instanceof LookupError || err instanceof ThrottledError) {
+  if (err instanceof AnalysisError || err instanceof LookupError ||
+      err instanceof ThrottledError || err instanceof BudgetError) {
     return res.status(err.status).json({ error: err.code, message: err.message });
   }
   console.error('unhandled', err);

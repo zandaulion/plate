@@ -1460,3 +1460,80 @@ test('the export still reads forward in time, whatever the day view does', async
   const dump = await (await api('/api/export.json', { headers: auth })).json();
   assert.deepEqual(dump.entries.map((e) => e.meal), ['breakfast', 'lunch', 'dinner']);
 });
+
+// ------------------------------------------------------- what a day may cost
+
+test('the daily allowance is counted per account, not per feature', async () => {
+  const { db } = await import('../server/db.js');
+  const { charge, refund, usedToday, DAILY_LIMIT, BudgetError } = await import('../server/budget.js');
+  const { auth } = await registerDevice();
+  const id = db.prepare('SELECT account_id FROM devices LIMIT 1').get().account_id;
+
+  for (let i = 0; i < DAILY_LIMIT; i++) charge(id);
+  assert.equal(usedToday(id), DAILY_LIMIT);
+
+  // The next one is refused rather than quietly allowed.
+  assert.throws(() => charge(id), (err) =>
+    err instanceof BudgetError && err.status === 429 && err.code === 'daily_limit');
+
+  // And a call that never reached the model gives its place back.
+  refund(id);
+  assert.equal(usedToday(id), DAILY_LIMIT - 1);
+  assert.equal(charge(id), DAILY_LIMIT, 'the returned place can be used');
+  assert.ok(auth);
+});
+
+test('one account spending its allowance does not touch another', async () => {
+  const { charge, usedToday, DAILY_LIMIT } = await import('../server/budget.js');
+  const { db } = await import('../server/db.js');
+  await registerDevice();
+  const a = db.prepare('SELECT account_id FROM devices ORDER BY rowid DESC LIMIT 1').get().account_id;
+  await registerDevice();
+  const b = db.prepare('SELECT account_id FROM devices ORDER BY rowid DESC LIMIT 1').get().account_id;
+
+  for (let i = 0; i < DAILY_LIMIT; i++) charge(a);
+  assert.equal(usedToday(b), 0);
+  assert.equal(charge(b), 1, 'a full neighbour is not a reason to refuse');
+});
+
+test('the same correction on the same photo is answered without asking again', async () => {
+  const { cachedAnalysis, cacheAnalysis, forgetPhoto } = await import('../server/budget.js');
+  const answer = { estimate: { items: [{ name: 'falafel wrap' }] }, totals: { calories: 500 } };
+
+  cacheAnalysis('p1.jpg', 'It is  VEGETARIAN ', answer);
+  // Case and spacing do not change the question, so they must not miss.
+  assert.deepEqual(cachedAnalysis('p1.jpg', 'it is vegetarian'), answer);
+  assert.equal(cachedAnalysis('p1.jpg', 'it is chicken'), null, 'different words, different question');
+  assert.equal(cachedAnalysis('p2.jpg', 'it is vegetarian'), null, 'different photo, different question');
+
+  // A deleted meal takes what the model said about it.
+  forgetPhoto('p1.jpg');
+  assert.equal(cachedAnalysis('p1.jpg', 'it is vegetarian'), null);
+});
+
+test('a photo cannot be read again beyond the cap', async () => {
+  const { db } = await import('../server/db.js');
+  const { MAX_CORRECTIONS } = await import('../server/budget.js');
+  const { auth } = await registerDevice();
+  const png = Buffer.alloc(400, 0x89).toString('base64');
+  const id = (await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-23', image: png, mimeType: 'image/png',
+      items: [{ name: 'shawarma', grams: 300, source: 'photo',
+                per: { calories: 2, protein: .1, fat: .08, carbs: .2 } }]
+    })
+  })).json()).id;
+
+  db.prepare('UPDATE entries SET corrections = ? WHERE id = ?').run(MAX_CORRECTIONS, id);
+
+  const res = await api(`/api/entries/${id}/reanalyse`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ correction: 'a third go' })
+  });
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).error, 'corrections_exhausted');
+
+  // The count travels with the entry, so the app can withdraw the offer.
+  const day = await (await api('/api/entries?day=2026-08-23', { headers: auth })).json();
+  assert.equal(day.entries[0].corrections, MAX_CORRECTIONS);
+});
