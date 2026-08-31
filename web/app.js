@@ -190,9 +190,10 @@ $('redeem-form').addEventListener('submit', async (ev) => {
     // Shown once and never again, so it is put in front of the user
     // immediately rather than left for them to discover in settings.
     if (body?.recoveryCode) {
-      fillProfile();
-      $('profile').hidden = false;
-      openScreen('profile', () => { $('profile').hidden = true; });
+      loadDevices();
+      renderRecoveryState();
+      $('settings').hidden = false;
+      openScreen('settings', () => { $('settings').hidden = true; });
       showCode('Save this recovery code', body.recoveryCode,
         'It is the only way back into your log if you lose this device. '
         + 'It is stored hashed and cannot be shown again.', true);
@@ -1304,18 +1305,28 @@ function showMaintenanceResult(m) {
 }
 
 const closeProfile = () => dismissScreen('profile');
+const closeSettings = () => dismissScreen('settings');
 
+/** Who you are: the details the estimate needs, and what it makes of them. */
 $('open-profile').addEventListener('click', () => {
   fillProfile();
-  loadDevices();
   loadWeight();
-  renderRecoveryState();
-  $('code-box').hidden = true;
   $('profile').hidden = false;
   openScreen('profile', () => { $('profile').hidden = true; });
 });
 $('profile-close').addEventListener('click', closeProfile);
 $('profile').addEventListener('click', (ev) => { if (ev.target === $('profile')) closeProfile(); });
+
+/** How the app is set up: devices, your data, getting back in. */
+$('open-settings').addEventListener('click', () => {
+  loadDevices();
+  renderRecoveryState();
+  $('code-box').hidden = true;
+  $('settings').hidden = false;
+  openScreen('settings', () => { $('settings').hidden = true; });
+});
+$('settings-close').addEventListener('click', closeSettings);
+$('settings').addEventListener('click', (ev) => { if (ev.target === $('settings')) closeSettings(); });
 
 $('profile-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();

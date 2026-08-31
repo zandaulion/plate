@@ -39,7 +39,15 @@
     <button id="prev-day" class="icon-btn" aria-label="Previous day">&#8249;</button>
     <button id="day-label" class="day-label" aria-live="polite">Today</button>
     <button id="next-day" class="icon-btn" aria-label="Next day">&#8250;</button>
-    <button id="open-profile" class="icon-btn profile-btn" aria-label="Profile and settings">
+    <button id="open-profile" class="icon-btn profile-btn" aria-label="You">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"
+           fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="8.4" r="3.7"/>
+        <path d="M4.9 20a7.1 7.1 0 0 1 14.2 0"/>
+      </svg>
+    </button>
+    <button id="open-settings" class="icon-btn profile-btn" aria-label="Settings">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"
            fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" stroke-linejoin="round">
@@ -209,6 +217,9 @@
     </div>
   </div>
 
+  <!-- Two sheets, because these are two different kinds of thing: who you are
+       and how the app is set up. Body measurements sitting next to device
+       revocation made both harder to find. -->
   <div id="profile" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="profile-heading">
     <div class="sheet-inner">
       <header class="sheet-head">
@@ -248,16 +259,6 @@
       </form>
 
       <section class="devices-block">
-        <h3 class="section-head">Your devices</h3>
-        <ul id="device-list" class="devices"></ul>
-        <button id="link-device" class="secondary" type="button">Add another device</button>
-
-        <div id="code-box" class="code-box" hidden>
-          <p class="code-label" id="code-title"></p>
-          <output class="code-value" id="code-value"></output>
-          <p class="hint" id="code-hint"></p>
-        </div>
-
         <h3 class="section-head">Weight</h3>
         <div class="weigh-row">
           <label for="w-kg" class="sr-only">Today's weight in kilograms</label>
@@ -270,6 +271,30 @@
 
         <h3 class="section-head">What you burn</h3>
         <div id="exp-detail" class="exp"></div>
+
+      </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="settings-heading">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="settings-heading">Settings</h2>
+        <button id="settings-close" class="icon-btn" aria-label="Close">&times;</button>
+      </header>
+
+      <div id="settings-body">
+      <section class="devices-block">
+        <h3 class="section-head">Your devices</h3>
+        <ul id="device-list" class="devices"></ul>
+        <button id="link-device" class="secondary" type="button">Add another device</button>
+
+        <div id="code-box" class="code-box" hidden>
+          <p class="code-label" id="code-title"></p>
+          <output class="code-value" id="code-value"></output>
+          <p class="hint" id="code-hint"></p>
+        </div>
 
         <h3 class="section-head">Your data</h3>
         <p class="hint">Everything this account holds, with nothing withheld and no

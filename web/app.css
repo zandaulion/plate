@@ -98,7 +98,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 
 .topbar {
   position: sticky; top: 0; z-index: 5;
-  display: grid; grid-template-columns: 44px 1fr 44px 48px;
+  display: grid; grid-template-columns: 40px 1fr 40px 46px 46px;
   align-items: center; gap: 4px;
   padding: max(8px, env(safe-area-inset-top)) 10px 8px;
   background: color-mix(in srgb, var(--ground) 88%, transparent);
@@ -106,7 +106,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   border-bottom: 1px solid var(--line);
 }
 .icon-btn {
-  width: 44px; height: 44px; border: 0; background: none; border-radius: 10px;
+  width: 40px; height: 44px; border: 0; background: none; border-radius: 10px;
   font-size: 1.3rem; line-height: 1; color: var(--ink-2);
 }
 .icon-btn:hover { background: var(--sunken); }
@@ -117,7 +117,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 /* Was a text glyph at 1.1rem -- smaller than the arrows either side of it,
    and at the mercy of whichever font the platform has for U+2699. It is an SVG
    now, drawn at the same weight as every other icon in the app. */
-.profile-btn { width: 48px; height: 48px; }
+.profile-btn { width: 46px; height: 48px; }
 .icon-btn svg { display: block; }
 
 .view { max-width: 560px; margin: 0 auto; padding: 18px 16px 132px; }
@@ -241,7 +241,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 /* The sheet body is the single scroll container. The profile form used to be
    that container itself, which collapsed it to nothing once the devices
    section became its sibling and clipped away the Save button. */
-#review-body, #profile-body { overflow-y: auto; flex: 1; }
+#review-body, #profile-body, #settings-body { overflow-y: auto; flex: 1; }
 #review-body { padding: 16px; }
 #profile-form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .sheet-foot {

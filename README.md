@@ -103,6 +103,16 @@ Configuration, all via environment:
 | `DATA_DIR` | SQLite database and photo files |
 | `PORT`, `BIND_HOST` | `BIND_HOST` stays on loopback unless set; the container sets it explicitly |
 
+## Two sheets, not one
+
+The topbar has a person and a gear, because they lead to different kinds of
+thing. **You** holds body details, the weight chart and what the app makes of
+them. **Settings** holds devices, export and recovery.
+
+They were one sheet, and putting height and age next to device revocation made
+both harder to find — the daily question ("what does it think I burn?") and the
+rare one ("revoke my old phone") were sharing a scroll.
+
 ## Accounts, devices and getting back in
 
 A person is an **account**; a phone or tablet is a **device**. History and the
