@@ -986,3 +986,57 @@ test('history is scoped to the account', async () => {
   const theirs = await (await api('/api/history?days=7', { headers: b.auth })).json();
   assert.ok(theirs.days.every((d) => d.calories === null));
 });
+
+test('saving the profile without a weight leaves the stored one alone', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 88, heightCm: 180, ageYears: 30, sex: 'male', activity: 'light' })
+  });
+
+  // What the form now sends: no weightKg at all.
+  const res = await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ heightCm: 179, ageYears: 46, sex: 'male', activity: 'sedentary' })
+  });
+  assert.equal(res.status, 200);
+
+  const me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.profile.weightKg, 88, 'an absent field must not wipe the value');
+  assert.equal(me.profile.heightCm, 179);
+  assert.equal(me.profile.ageYears, 46);
+});
+
+test('an explicit null still clears a field', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 88, heightCm: 180, ageYears: 30, activity: 'light' })
+  });
+  await api('/api/profile', { method: 'PUT', headers: auth, body: JSON.stringify({ ageYears: null }) });
+
+  const me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.profile.ageYears, null, 'null means clear');
+  assert.equal(me.profile.weightKg, 88, 'and only that field');
+});
+
+test('the profile reports which weight its estimate used', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 82.7, heightCm: 179, ageYears: 46, sex: 'male', activity: 'sedentary' })
+  });
+
+  let me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.weightUsedKg, 82.7, 'the stored value, while there is no reading');
+
+  await api('/api/weights', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ day: new Date().toISOString().slice(0, 10), kg: 83 })
+  });
+
+  me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.weightUsedKg, 83, 'the weigh-in, once there is one');
+  assert.equal(me.maintenance.kcal, Math.round((10 * 83 + 6.25 * 179 - 5 * 46 + 5) * 1.2),
+    'and the figure agrees with what it says it used');
+});

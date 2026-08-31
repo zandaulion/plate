@@ -1467,24 +1467,32 @@ function fillProfile() {
     .map((l) => `<option value="${esc(l.id)}">${esc(l.label)}</option>`).join('');
 
   if (!p) return;
-  $('p-weight').value = p.weightKg ?? '';
   $('p-height').value = p.heightCm ?? '';
   $('p-age').value = p.ageYears ?? '';
   $('p-sex').value = p.sex ?? '';
   if (p.activity) $('p-activity').value = p.activity;
-  showMaintenanceResult(state.me.maintenance);
+  showMaintenanceResult(state.me.maintenance, state.me.weightUsedKg);
 }
 
-function showMaintenanceResult(m) {
+/**
+ * `usedKg` says which weight the figure was computed from, because the answer
+ * is no longer visible in a field on this screen -- it comes from the weigh-in
+ * log, and a number with no stated input invites exactly the confusion this
+ * change removed.
+ */
+function showMaintenanceResult(m, usedKg) {
   const el = $('profile-result');
   if (!m) {
     el.className = 'maintenance none';
-    el.textContent = 'Fill in every field to see an estimate.';
+    el.textContent = usedKg
+      ? 'Fill in height, age and a typical week to see an estimate.'
+      : 'Log a weight below, and fill in height, age and a typical week.';
     return;
   }
   el.className = 'maintenance';
   el.innerHTML = `You burn roughly <b>${m.kcal} kcal</b> on an average day
     &mdash; most likely between <b>${m.low}</b> and <b>${m.high}</b>.
+    ${usedKg ? `Worked out from your latest weigh-in, <b>${Number(usedKg).toFixed(1)} kg</b>. ` : ''}
     This is an estimate from a population formula, not a measurement.`;
 }
 
@@ -1520,8 +1528,10 @@ $('profile-form').addEventListener('submit', async (ev) => {
   try {
     const data = await api('/api/profile', {
       method: 'PUT',
+      // weightKg is deliberately not sent. The server treats an absent field
+      // as "leave it alone", so saving here never disturbs a weight that came
+      // from a weigh-in.
       body: JSON.stringify({
-        weightKg: $('p-weight').value || null,
         heightCm: $('p-height').value || null,
         ageYears: $('p-age').value || null,
         sex: $('p-sex').value || null,
@@ -1530,7 +1540,8 @@ $('profile-form').addEventListener('submit', async (ev) => {
     });
     state.me.profile = data.profile;
     state.me.maintenance = data.maintenance;
-    showMaintenanceResult(data.maintenance);
+    state.me.weightUsedKg = data.weightUsedKg;
+    showMaintenanceResult(data.maintenance, data.weightUsedKg);
     toast('Saved');
     await loadDay();
   } catch (e) {
@@ -1643,7 +1654,12 @@ async function loadWeight() {
     } else {
       $('weight-trend').textContent = 'A trend needs at least 3 weigh-ins spread over a week.';
     }
-    if (weights.length) $('w-kg').placeholder = `Last: ${weights[weights.length - 1].kg} kg`;
+    if (weights.length) {
+      $('w-kg').placeholder = `Last: ${weights[weights.length - 1].kg} kg`;
+      state.me = state.me || {};
+      state.me.weightUsedKg = weights[weights.length - 1].kg;
+      if (state.me.maintenance) showMaintenanceResult(state.me.maintenance, state.me.weightUsedKg);
+    }
   } catch {
     $('weight-trend').textContent = '';
   }

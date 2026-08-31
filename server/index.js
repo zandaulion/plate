@@ -185,6 +185,9 @@ app.get('/api/me', requireDevice, (req, res) => {
     label: req.device.label,
     profile,
     maintenance: maintenanceEnergy(effectiveProfile(req.device.account_id)),
+    // Which weight the figure came from. The profile form no longer shows one,
+    // so the screen has to say what it used.
+    weightUsedKg: effectiveProfile(req.device.account_id)?.weightKg ?? null,
     expenditure: expenditureFor(req.device.account_id),
     activityLevels: ACTIVITY_LEVELS,
     meals: MEALS,
@@ -195,15 +198,30 @@ app.get('/api/me', requireDevice, (req, res) => {
   });
 });
 
+/**
+ * Partial update: a field absent from the body is left alone, and only an
+ * explicit null clears it.
+ *
+ * This matters since weight left the profile form. The client no longer sends
+ * weightKg, and a blanket overwrite would silently wipe the stored figure of
+ * anyone who has not yet logged a reading -- taking away their expenditure
+ * estimate the first time they corrected their height.
+ */
 app.put('/api/profile', requireDevice, (req, res) => {
   const b = req.body || {};
-  const num = (v) => (v === null || v === '' || v === undefined ? null : Number(v));
+  const num = (v) => (v === null || v === '' ? null : Number(v));
+  const current = profileFor(req.device.account_id) || {};
+  const given = (k) => Object.prototype.hasOwnProperty.call(b, k);
 
-  const weightKg = num(b.weightKg);
-  const heightCm = num(b.heightCm);
-  const ageYears = num(b.ageYears);
-  const sex = ['male', 'female'].includes(b.sex) ? b.sex : null;
-  const activity = ACTIVITY_LEVELS.some((l) => l.id === b.activity) ? b.activity : null;
+  const weightKg = given('weightKg') ? num(b.weightKg) : (current.weightKg ?? null);
+  const heightCm = given('heightCm') ? num(b.heightCm) : (current.heightCm ?? null);
+  const ageYears = given('ageYears') ? num(b.ageYears) : (current.ageYears ?? null);
+  const sex = given('sex')
+    ? (['male', 'female'].includes(b.sex) ? b.sex : null)
+    : (current.sex ?? null);
+  const activity = given('activity')
+    ? (ACTIVITY_LEVELS.some((l) => l.id === b.activity) ? b.activity : null)
+    : (current.activity ?? null);
 
   // Out-of-range values are rejected rather than clamped: silently changing
   // someone's stated weight would produce a maintenance figure they cannot
@@ -226,7 +244,14 @@ app.put('/api/profile', requireDevice, (req, res) => {
   `).run(req.device.account_id, weightKg, heightCm, ageYears, sex, activity, nowIso());
 
   const profile = profileFor(req.device.account_id);
-  res.json({ profile, maintenance: maintenanceEnergy(profile) });
+  const effective = effectiveProfile(req.device.account_id);
+  res.json({
+    profile,
+    // Computed from the effective profile, not the stored one: the answer must
+    // match what the rest of the app shows.
+    maintenance: maintenanceEnergy(effective),
+    weightUsedKg: effective?.weightKg ?? null
+  });
 });
 
 // -------------------------------------------------------------- analysis

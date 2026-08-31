@@ -246,6 +246,17 @@ weight, because at that point the profile stops feeding the calculation at all.
 A banner still asking for details the app no longer uses would be a nag with no
 purpose.
 
+**Weight is not in the profile form.** It was, and the result was two numbers
+for the same thing on one screen disagreeing with each other — a stale 82.7 in
+the field while the maths quietly used the 83 from that morning's weigh-in.
+The profile now holds only things that rarely change: height, age, sex and a
+typical week. Weight is logged, and the estimate says which reading it used.
+
+Updating the profile is a **partial** update: a field absent from the body is
+left alone and only an explicit null clears it. Without that, saving a
+corrected height would have silently wiped the stored weight of anyone who had
+not yet logged a reading.
+
 **The formula uses the most recent weight reading, not the one typed at
 sign-up.** `profiles.weight_kg` was never revised, so someone who had logged
 themselves four kilos lighter still had their expenditure computed from the old

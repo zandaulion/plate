@@ -262,26 +262,26 @@
 
       <div id="profile-body">
       <form id="profile-form" class="stack">
-        <p class="hint">Used only to estimate what you burn on an average day. It stays on this
-          server and is never sent anywhere else.</p>
+        <p class="hint">Things that rarely change. Used only to estimate what you burn on an
+          average day; your weight comes from your weigh-ins below. It stays on this server and
+          is never sent anywhere else.</p>
 
+        <!-- Weight is not here. It is logged daily below and on the day view,
+             and having a second copy in this form meant two numbers for the
+             same thing on one screen, disagreeing with each other. -->
         <div class="field-row">
-          <label for="p-weight">Weight<span class="unit-tag">kg</span>
-            <input id="p-weight" type="number" inputmode="decimal" min="20" max="400" step="0.1"></label>
           <label for="p-height">Height<span class="unit-tag">cm</span>
             <input id="p-height" type="number" inputmode="numeric" min="90" max="260" step="1"></label>
-        </div>
-
-        <div class="field-row">
           <label for="p-age">Age<span class="unit-tag">years</span>
             <input id="p-age" type="number" inputmode="numeric" min="13" max="120" step="1"></label>
-          <label for="p-sex">Sex
-            <select id="p-sex">
-              <option value="">Prefer not to say</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
-            </select></label>
         </div>
+
+        <label for="p-sex">Sex
+          <select id="p-sex">
+            <option value="">Prefer not to say</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select></label>
 
         <label for="p-activity">Typical week
           <select id="p-activity"></select></label>
