@@ -1342,3 +1342,86 @@ test('events are scoped to the account, like everything else', async () => {
   const ua = await (await api('/api/usage', { headers: a.auth })).json();
   assert.equal(ua.interaction.events, 1, 'each account sees only its own');
 });
+
+// --------------------------------------------------- correcting after the fact
+
+/** An entry with a photograph and photo-read numbers, as the camera path makes. */
+async function loggedFromPhoto(auth) {
+  const png = Buffer.alloc(400, 0x89).toString('base64');
+  const res = await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-14', meal: 'lunch', image: png, mimeType: 'image/png',
+      items: [{ name: 'chicken shawarma', grams: 300, source: 'photo',
+                per: { calories: 2.1, protein: 0.14, fat: 0.09, carbs: 0.18 } }]
+    })
+  });
+  return (await res.json()).id;
+}
+
+test('a saved photo entry can be read again without re-uploading the picture', async () => {
+  const { auth } = await registerDevice();
+  const id = await loggedFromPhoto(auth);
+
+  const saved = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  const res = await api(`/api/entries/${id}/reanalyse`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ correction: "it's vegetarian, not chicken" })
+  });
+  if (saved) process.env.GEMINI_API_KEY = saved;
+
+  // Reaching the model at all is the point: it got past every ownership and
+  // eligibility check on the strength of the entry id alone, with no image in
+  // the request. Only the missing key stopped it.
+  assert.equal(res.status, 503, 'the request was accepted and only the key was missing');
+  assert.equal((await res.json()).error, 'not_configured');
+});
+
+test('a barcode entry is not re-read, so scanned facts are not replaced by a guess', async () => {
+  const { auth } = await registerDevice();
+  const png = Buffer.alloc(400, 0x89).toString('base64');
+  const id = (await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-14', image: png, mimeType: 'image/png',
+      items: [{ name: 'yoghurt', grams: 150, source: 'manual', barcode: '5000112637922',
+                per: { calories: 0.6, protein: 0.04, fat: 0.03, carbs: 0.05 } }]
+    })
+  })).json()).id;
+
+  const res = await api(`/api/entries/${id}/reanalyse`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ correction: 'something else' })
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'not_photo_based');
+});
+
+test('an entry logged without a photo has nothing to read again', async () => {
+  const { auth } = await registerDevice();
+  const id = (await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-08-14',
+      items: [{ name: 'porridge', grams: 250, source: 'photo',
+                per: { calories: 0.71, protein: 0.025, fat: 0.014, carbs: 0.12 } }]
+    })
+  })).json()).id;
+
+  const res = await api(`/api/entries/${id}/reanalyse`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ correction: 'x' })
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'no_photo');
+});
+
+test('one account cannot re-read another account\'s photograph', async () => {
+  const mine = await registerDevice();
+  const theirs = await registerDevice();
+  const id = await loggedFromPhoto(mine.auth);
+
+  const res = await api(`/api/entries/${id}/reanalyse`, {
+    method: 'POST', headers: theirs.auth, body: JSON.stringify({ correction: 'x' })
+  });
+  assert.equal(res.status, 404, 'not even told the entry exists');
+});

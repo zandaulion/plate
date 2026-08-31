@@ -26,7 +26,7 @@ import { summariseUsage } from '../core/usage.js';
 import { cleanBatch, summariseEvents } from '../core/events.js';
 import { zip } from './zip.js';
 import {
-  fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
+  fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf, hasPhotoItems
 } from '../core/analysis/estimate.js';
 import { parseResponse } from '../core/analysis/prompt.js';
 import { maintenanceEnergy, ACTIVITY_LEVELS } from '../core/nutrition.js';
@@ -516,6 +516,77 @@ app.put('/api/entries/:id', requireDevice, (req, res) => {
 
   res.json({ id: row.id, day: row.day, totals });
 });
+
+/**
+ * Read a saved entry's photograph again, with a correction from the person
+ * who ate it.
+ *
+ * The same affordance as on the review sheet, reached later. It matters most
+ * here: a misidentification is usually noticed after the fact, and until now
+ * the only remedy was to delete the entry and photograph a meal that had
+ * already been eaten.
+ *
+ * The photo never leaves the server for this. It is on disk already, so the
+ * client sends the correction alone rather than uploading back the image it
+ * was served -- which also means this works on an entry logged from another
+ * phone, where the image was never in this browser.
+ *
+ * Nothing is written. The new estimate goes back for confirmation and is
+ * saved by the ordinary edit path, so a correction that reads worse than the
+ * original can simply be abandoned.
+ */
+app.post('/api/entries/:id/reanalyse', requireDevice, asyncRoute(async (req, res) => {
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  if (!row.photo_id) {
+    return res.status(400).json({
+      error: 'no_photo',
+      message: 'This entry was not logged from a photo, so there is nothing to read again.'
+    });
+  }
+
+  // A barcode entry's picture is the product shot adopted for the log. Reading
+  // a jar of yoghurt as if it were a plated meal would replace scanned facts
+  // with a guess, which is strictly worse than what is already stored.
+  if (!hasPhotoItems({ items: JSON.parse(row.items_json) })) {
+    return res.status(400).json({
+      error: 'not_photo_based',
+      message: 'These numbers came from a barcode, not from reading the photo.'
+    });
+  }
+
+  const file = path.join(PHOTO_DIR, path.basename(row.photo_id));
+  if (!fs.existsSync(file)) {
+    return res.status(410).json({
+      error: 'photo_gone',
+      message: 'The photograph for this entry is no longer stored.'
+    });
+  }
+
+  const correction = typeof req.body?.correction === 'string'
+    ? req.body.correction.slice(0, 200) : null;
+
+  const { raw, usage, model } = await analysePhoto(
+    fs.readFileSync(file).toString('base64'),
+    row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
+    correction);
+  const parsed = parseResponse(raw);
+
+  if (!parsed.ok) return res.status(422).json({ error: parsed.reason, note: parsed.note, usage, model });
+
+  const estimate = fromModelResponse({ items: parsed.items, note: parsed.note });
+  if (!estimate.items.length) {
+    return res.status(422).json({ error: 'nothing_found', note: parsed.note, usage, model });
+  }
+
+  res.json({
+    estimate,
+    totals: totalsOf(estimate),
+    ranges: rangesOf(estimate),
+    usage, model
+  });
+}));
 
 app.delete('/api/entries/:id', requireDevice, (req, res) => {
   const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')

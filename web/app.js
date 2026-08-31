@@ -1011,7 +1011,14 @@ function renderReview() {
   // the grams were entered deliberately, so the control would fight the user.
   const photoBased = hasPhotoItems(est);
   $('weight-block').hidden = !photoBased;
-  $('correct-block').hidden = !(photoBased && state.photo?.base64);
+  // Correctable either from the photo still in memory, or -- for an entry
+  // already saved -- from the copy the server kept, which is the case that
+  // matters most: a wrong identification is usually spotted after the fact.
+  $('correct-block').hidden = !(photoBased && (state.photo?.base64 || state.existingPhotoId));
+  // Tense follows the meal: a plate in front of you is still being eaten, one
+  // logged yesterday is not.
+  $('correct-toggle').textContent = state.editingId
+    ? "Not what you ate?" : "Not what you're eating?";
 
   $('weight-out').textContent = `${Math.round(totals.grams)} g`;
   $('review-kcal').textContent = Math.round(totals.calories);
@@ -1306,7 +1313,14 @@ $('correct-toggle').addEventListener('click', () => {
 $('correct-go').addEventListener('click', async () => {
   const correction = $('correct-text').value.trim();
   if (!correction) return toast('Say what it is first.');
-  if (!state.photo?.base64) return toast('The photo is no longer available — take another.');
+
+  // Fresh capture sends the bytes it holds; a saved entry names itself and
+  // lets the server read the photo it already has, so this works even on an
+  // entry logged from a different phone.
+  const live = !!state.photo?.base64;
+  if (!live && !(state.editingId && state.existingPhotoId)) {
+    return toast('The photo is no longer available — take another.');
+  }
 
   $('correct-go').disabled = true;
   setStatus('<span class="spinner"></span>Reading it again…');
@@ -1314,12 +1328,16 @@ $('correct-go').addEventListener('click', async () => {
   const startedAt = Date.now();
 
   try {
-    const data = await api('/api/analyse', {
-      method: 'POST',
-      body: JSON.stringify({
-        image: state.photo.base64, mimeType: state.photo.mimeType, correction
-      })
-    });
+    const data = live
+      ? await api('/api/analyse', {
+          method: 'POST',
+          body: JSON.stringify({
+            image: state.photo.base64, mimeType: state.photo.mimeType, correction
+          })
+        })
+      : await api(`/api/entries/${state.editingId}/reanalyse`, {
+          method: 'POST', body: JSON.stringify({ correction })
+        });
     if (!screenIsOpen('review')) return;
 
     track('correct_ok', { seconds: (Date.now() - startedAt) / 1000, items: data.estimate.items.length });

@@ -380,6 +380,16 @@ keeps its own answer — and it is told to work the dish out from the start
 rather than adjust, because swapping chicken for falafel changes the whole
 nutrition rather than one line of it.
 
+It works on a saved entry too, which is the case that matters more: a wrong
+identification is usually noticed later, over the log rather than over the
+plate. The server still holds the photograph, so the correction travels alone
+and the picture never moves -- which also means an entry logged on one phone
+can be corrected from another. Nothing is written until the new numbers are
+confirmed, so a re-read that comes back worse can be abandoned.
+
+A barcode entry is refused: its picture is a product shot, and reading a jar
+of yoghurt as a plated meal would replace scanned facts with a guess.
+
 This is the only recourse for food that no database holds. The bundled table
 has no shawarma, kebab, gyro, seitan or halloumi: USDA is American, Open Food
 Facts is packaged goods, and a restaurant wrap in Bucharest is in neither.
