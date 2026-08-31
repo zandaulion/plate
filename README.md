@@ -367,6 +367,23 @@ The threshold has slack for a reason: fibre counts as carbohydrate on EU labels
 but yields about 2 kcal/g rather than 4, and panels are rounded, so small gaps
 are normal.
 
+## Usage
+
+`GET /api/usage?days=30` reports how the account has been using the app: which
+of the three entry paths gets reached for, whether photo portions actually get
+corrected, whether weighing has become a habit, when in the day things get
+logged, and how much of the logging is repeat foods.
+
+**Nothing is collected for it.** Every figure is derived from rows the app must
+keep in order to work — an entry already records when it was written, which day
+it was for, how its portion was arrived at, and where each food came from.
+
+It is scoped to the caller by construction: it reads the requesting account and
+nothing else, so it cannot report on anyone else's diary regardless of who
+asks. That is deliberate. Reading a friend's food log to find out whether a
+button works is not a trade worth making, and the invitation these friends
+receive says the app does not track anything.
+
 ## Trends
 
 Tapping the totals card opens two charts over a shared date axis, at 14, 30 or

@@ -22,6 +22,7 @@ import { summariseRecent } from '../core/foods.js';
 import { toJson, toCsv } from '../core/export.js';
 import { smoothSeries, weightTrend } from '../core/weight.js';
 import { adaptiveExpenditure } from '../core/expenditure.js';
+import { summariseUsage } from '../core/usage.js';
 import { zip } from './zip.js';
 import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
@@ -609,6 +610,39 @@ function expenditureFor(accountId) {
 
 app.get('/api/expenditure', requireDevice, (req, res) => {
   res.json(expenditureFor(req.device.account_id));
+});
+
+// ----------------------------------------------------------------- usage
+
+/**
+ * How this account has been using the app.
+ *
+ * Scoped to the caller by construction -- it reads req.device.account_id and
+ * nothing else, so it cannot report on anyone else's diary no matter who asks.
+ * That is deliberate: this exists to answer usability questions during
+ * testing, and reading a friend's food log to find out whether a button works
+ * is not a trade worth making.
+ *
+ * Nothing new is collected for it. Every figure comes from rows the app must
+ * keep in order to function.
+ */
+app.get('/api/usage', requireDevice, (req, res) => {
+  const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
+  const account = req.device.account_id;
+  const from = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+
+  const entries = db.prepare(
+    'SELECT day, meal, created_at, portion_source, photo_id, items_json FROM entries WHERE account_id = ? AND day >= ?'
+  ).all(account, from).map((r) => ({
+    day: r.day,
+    meal: r.meal,
+    createdAt: r.created_at,
+    portionSource: r.portion_source,
+    photoId: r.photo_id,
+    items: JSON.parse(r.items_json)
+  }));
+
+  res.json(summariseUsage({ entries, weights: weightRows(account, days + 1), days }));
 });
 
 // --------------------------------------------------------------- history
