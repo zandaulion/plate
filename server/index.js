@@ -436,8 +436,11 @@ app.get('/api/entries', requireDevice, (req, res) => {
     ? req.query.day : null;
   if (!day) return res.status(400).json({ error: 'bad_day' });
 
+  // Newest first. A day is read while it is still being lived: the meal just
+  // logged is the one being looked at, and on a full day the evening ones
+  // would otherwise sit below the fold behind breakfast.
   const rows = db.prepare(
-    'SELECT * FROM entries WHERE account_id = ? AND day = ? ORDER BY created_at'
+    'SELECT * FROM entries WHERE account_id = ? AND day = ? ORDER BY created_at DESC'
   ).all(req.device.account_id, day).map(rowToEntry);
 
   // The day is compared against measured expenditure when there is enough

@@ -293,8 +293,11 @@ test('how the weight was arrived at is stored and returned', async () => {
     assert.ok(created.id, JSON.stringify(extra));
   }
 
+  // The day reads newest first, so the cases come back in reverse. This test
+  // is about what was stored, not about the order, hence the reversal here
+  // rather than a sort that would hide a genuine ordering change.
   const day = await (await api('/api/entries?day=2026-08-20', { headers: auth })).json();
-  assert.deepEqual(day.entries.map((e) => e.portionSource), cases.map((c) => c[1]));
+  assert.deepEqual(day.entries.map((e) => e.portionSource), cases.map((c) => c[1]).reverse());
 });
 
 test('editing can upgrade an entry to weighed', async () => {
@@ -1424,4 +1427,36 @@ test('one account cannot re-read another account\'s photograph', async () => {
     method: 'POST', headers: theirs.auth, body: JSON.stringify({ correction: 'x' })
   });
   assert.equal(res.status, 404, 'not even told the entry exists');
+});
+
+test('a day reads newest first, so the meal just logged is at the top', async () => {
+  const { auth } = await registerDevice();
+  const item = { name: 'stew', grams: 100, per: { calories: 1, protein: 0.05, fat: 0.04, carbs: 0.1 }, source: 'photo' };
+
+  for (const meal of ['breakfast', 'lunch', 'dinner']) {
+    await api('/api/entries', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ day: '2026-08-21', meal, items: [item] })
+    });
+  }
+
+  const day = await (await api('/api/entries?day=2026-08-21', { headers: auth })).json();
+  assert.deepEqual(day.entries.map((e) => e.meal), ['dinner', 'lunch', 'breakfast']);
+});
+
+test('the export still reads forward in time, whatever the day view does', async () => {
+  const { auth } = await registerDevice();
+  const item = { name: 'stew', grams: 100, per: { calories: 1, protein: 0.05, fat: 0.04, carbs: 0.1 }, source: 'photo' };
+
+  for (const meal of ['breakfast', 'lunch', 'dinner']) {
+    await api('/api/entries', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ day: '2026-08-22', meal, items: [item] })
+    });
+  }
+
+  // An export is read start to finish rather than scanned, so it keeps the
+  // order the meals happened in.
+  const dump = await (await api('/api/export.json', { headers: auth })).json();
+  assert.deepEqual(dump.entries.map((e) => e.meal), ['breakfast', 'lunch', 'dinner']);
 });
