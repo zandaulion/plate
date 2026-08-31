@@ -198,15 +198,29 @@ require photographing it.
   cached once per barcode, then *copied* into each entry that uses it — shared
   files would be unlinked out from under other entries on the first delete, and
   copies keep deletion and export behaving exactly as they do for a photograph.
-* **Search** — USDA FoodData Central for generic whole foods, Open Food Facts
-  for packaged ones, merged and re-ranked. Open Food Facts alone is a poor
-  generic index: searching *banana* there returns banana yoghurt and banana
-  chips before fruit, which is why USDA is queried alongside it and unbranded
-  results are ranked up.
+* **Search** — a **bundled** USDA table for generic whole foods, Open Food
+  Facts for packaged ones, merged and re-ranked. Open Food Facts alone is a
+  poor generic index: searching *banana* there returns banana yoghurt and
+  banana chips before fruit.
 
-USDA works out of the box on its `DEMO_KEY`, capped at about 30 requests an
-hour per IP; running dry degrades to packaged-food results rather than failing.
-Set `USDA_API_KEY` to a free key to remove the cap.
+`assets/foods.sqlite` holds 7,832 foods in 1.7 MB, built by
+`scripts/build-food-table.mjs` from USDA FoodData Central. No key, no network,
+no rate limit — the demo key it replaced was capped at about thirty requests an
+hour, which one evening of searching exhausts. It also means generic search
+keeps working with no connection at all, which is what the Android app will
+need: a key cannot travel inside a build where anyone can extract it.
+
+Ranking is scored per word, not on the phrase, because USDA writes names back
+to front — *olive oil* has to reach "Oil, olive, salad or cooking". A whole
+word beats a word that merely starts the same way, so "Eggnog" stays below
+"Egg, whole" for *egg*; the first word of a name is treated as its head noun,
+so "Flour, rice, white" loses to "Rice, white" for *white rice*; and how much
+of the name the query accounts for breaks the remaining ties.
+
+It is good, not perfect. *banana*, *egg*, *cheddar*, *almonds* and *greek
+yogurt* land on the right entry; *chicken breast* and *salmon* still surface a
+breaded product first, because USDA names plain cuts at length and processed
+ones tersely.
 
 **Database items carry no photo-error band.** The measured ranges apply to
 what a model read off a photograph; a scanned barcode's nutrition is exact, and

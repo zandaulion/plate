@@ -161,31 +161,80 @@ export function fromUsda(food) {
   };
 }
 
+/** Query and food names alike, reduced to comparable words. */
+export const tokenise = (s) => String(s || '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+
 /**
  * Orders search hits so the useful one is first.
  *
- * Exact and prefix name matches outrank substring matches, and unbranded
- * records outrank branded ones -- someone typing "banana" wants the fruit, not
- * a banana-flavoured drink, and Open Food Facts alone ranks it the other way.
+ * Scored per word rather than on the phrase, because USDA writes names back to
+ * front: "olive oil" has to find "Oil, olive, salad or cooking" and "chicken
+ * breast" has to find "Chicken, broilers or fryers, breast, meat only, raw".
+ * A phrase match finds neither.
+ *
+ * A whole word beats a word that merely starts the same way, which is what
+ * keeps "Eggplant" below "Egg, whole, raw" for the query "egg" without
+ * excluding it — "chick" should still reach chicken.
+ *
+ * Shorter names win ties, since the generic entry is nearly always the terse
+ * one, and unbranded records outrank branded ones: someone typing "banana"
+ * wants the fruit, not a banana-flavoured drink, and Open Food Facts alone
+ * ranks it the other way.
  */
 export function rankResults(results, query) {
-  const q = String(query || '').toLowerCase().trim();
-  if (!q) return results;
+  const wanted = tokenise(query);
+  if (!wanted.length) return results;
 
   const score = (r) => {
-    const name = r.name.toLowerCase();
-    const branded = /\(/.test(r.name) || r.source === 'openfoodfacts';
+    const name = String(r.name || '').toLowerCase();
+    const words = tokenise(name);
     let s = 0;
-    if (name === q) s += 100;
-    else if (name.startsWith(q)) s += 60;
-    else if (name.includes(q)) s += 30;
-    // A shorter name is usually the more generic record.
-    s += Math.max(0, 30 - name.length / 3);
-    if (!branded) s += 25;
+
+    if (name === wanted.join(' ')) s += 120;
+
+    const matched = new Set();
+
+    for (const [i, token] of wanted.entries()) {
+      // Plurals are the same food. Without this, "banana" scores "banana
+      // powder" above "Bananas, raw", because only the former contains the
+      // word exactly as typed.
+      const wholeAt = words.findIndex((w) => w === token || w === `${token}s` || `${w}s` === token);
+      const prefixAt = words.findIndex((w) => w.startsWith(token));
+
+      // Only whole words count towards coverage. A name that merely starts
+      // the same way should not be credited as being about the thing:
+      // "Eggnog" is one word entirely matched by "egg" on a prefix test, and
+      // would otherwise outrank "Egg, whole, raw".
+      if (wholeAt !== -1) { s += 24; matched.add(wholeAt); }
+      else if (prefixAt !== -1) s += 8;
+      else s -= 20;                       // a word the name does not have at all
+
+      // The first word of a name carries most of its meaning: "Oil, olive"
+      // is oil, "Mayonnaise ... with olive oil" is mayonnaise.
+      if (prefixAt === 0 && i === 0) s += 18;
+    }
+
+    // How much of the name the query accounts for. A terse entry that is
+    // entirely about what was asked for beats a long one that merely mentions
+    // it, without hard-coding a preference for short names.
+    s += 40 * (matched.size / Math.max(1, words.length));
+
+    // The leading word is the head noun. "Flour, rice, white" is flour and
+    // "Rice, white, long-grain" is rice, and someone asking for white rice
+    // wants the second.
+    const headMatched = words.length
+      && wanted.some((t) => words[0] === t || words[0] === `${t}s` || words[0].startsWith(t));
+    if (!headMatched) s -= 22;
+
+    if (!(/\(/.test(r.name) || r.source === 'openfoodfacts')) s += 14;
     return s;
   };
 
-  return [...results].sort((a, b) => score(b) - score(a));
+  return [...results]
+    .map((r) => ({ r, s: score(r) }))
+    .sort((a, b) => b.s - a.s)
+    .map(({ r }) => r);
 }
 
 /**

@@ -1141,3 +1141,90 @@ test('recents carry the barcode, so a repeat scan keeps its picture', async () =
   const { recent } = await (await api('/api/foods/recent', { headers: auth })).json();
   assert.equal(recent.find((f) => f.name === 'Oat drink').barcode, barcode);
 });
+
+test('a cached barcode is refreshed once it goes stale', async () => {
+  const { db } = await import('../server/db.js');
+  const { lookupBarcode } = await import('../server/foods.js');
+
+  // Seed the cache directly with an old row and no network involved.
+  const barcode = '8888888888888';
+  db.prepare(`
+    INSERT INTO food_cache (id, barcode, name, source, per100_json, serving_g, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(`off:${barcode}`, barcode, 'Old recipe', 'openfoodfacts',
+    JSON.stringify({ calories: 100, protein: 1, fat: 1, carbs: 1 }), null,
+    new Date(Date.now() - 5 * 86400000).toISOString());
+
+  const fresh = await lookupBarcode(barcode);
+  assert.equal(fresh.name, 'Old recipe');
+  assert.equal(fresh.cached, true);
+  assert.ok(!fresh.stale, 'five days old is still fresh');
+
+  // Age it past the window. The refresh will fail (no such product), and the
+  // stale answer must survive that rather than becoming an error.
+  db.prepare('UPDATE food_cache SET fetched_at = ? WHERE barcode = ?')
+    .run(new Date(Date.now() - 200 * 86400000).toISOString(), barcode);
+
+  const stale = await lookupBarcode(barcode);
+  assert.equal(stale.name, 'Old recipe', 'the known answer is still returned');
+  assert.equal(stale.refreshFailed, true, 'and it says the refresh did not land');
+});
+
+test('an unknown barcode says so, rather than reporting an upstream failure', async () => {
+  const { auth } = await registerDevice();
+  const res = await api('/api/foods/barcode/8888888888887', { headers: auth });
+  // Open Food Facts answers 404 for a code it does not know. That is a normal
+  // outcome of scanning something obscure, not a fault, and the message a
+  // person sees in a shop should say which.
+  assert.equal(res.status, 404, `got ${res.status}`);
+  const body = await res.json();
+  assert.equal(body.error, 'not_found');
+  assert.match(body.message, /not in the database/i);
+});
+
+// ------------------------------------------------- bundled generic search
+
+test('generic search works with no network and no key', async () => {
+  const { auth } = await registerDevice();
+  // Open Food Facts may or may not answer during a test run; the bundled
+  // table is what has to be there, so the assertions are about its results.
+  const res = await api('/api/foods/search?q=banana', { headers: auth });
+  assert.equal(res.status, 200);
+
+  const { results, genericSearch } = await res.json();
+  assert.equal(genericSearch, true, 'the table loaded');
+  assert.ok(results.length, 'and returned something');
+
+  const top = results[0];
+  assert.match(top.name, /banana/i);
+  assert.equal(top.source, 'usda');
+  // The fruit, not a banana-flavoured product.
+  assert.ok(top.per100.calories > 60 && top.per100.calories < 130,
+    `expected fruit-like energy, got ${top.per100.calories}`);
+});
+
+test('word order does not matter, because USDA writes names backwards', async () => {
+  const { auth } = await registerDevice();
+  const { results } = await (await api('/api/foods/search?q=olive%20oil', { headers: auth })).json();
+  // "Oil, olive, salad or cooking" only matches if the words are looked for
+  // independently rather than as a phrase.
+  assert.ok(results.some((r) => /oil, olive/i.test(r.name)), 'found the oil');
+});
+
+test('every bundled food is physically possible', async () => {
+  const { isPlausible } = await import('../core/foods.js');
+  const { auth } = await registerDevice();
+  for (const q of ['cheese', 'rice', 'chicken', 'oil']) {
+    const { results } = await (await api(`/api/foods/search?q=${q}`, { headers: auth })).json();
+    for (const r of results.filter((x) => x.source === 'usda')) {
+      assert.ok(isPlausible(r.per100), `${r.name}: ${JSON.stringify(r.per100)}`);
+    }
+  }
+});
+
+test('a query that matches nothing returns an empty list, not an error', async () => {
+  const { auth } = await registerDevice();
+  const res = await api('/api/foods/search?q=zzzzqqqx', { headers: auth });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).results, []);
+});

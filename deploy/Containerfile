@@ -12,6 +12,9 @@ RUN npm ci --omit=dev
 COPY core ./core
 COPY server ./server
 COPY web ./web
+# The bundled generic-food table. Without it barcodes and packaged search still
+# work, but searching for "banana" does not.
+COPY assets ./assets
 
 RUN addgroup -g 10006 appgroup && \
     adduser -u 10006 -G appgroup -s /bin/sh -D appuser && \

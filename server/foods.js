@@ -8,7 +8,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, nowIso, PRODUCT_DIR } from './db.js';
-import { fromOpenFoodFacts, fromUsda, rankResults } from '../core/foods.js';
+import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+import { fromOpenFoodFacts, rankResults, tokenise } from '../core/foods.js';
 
 const UA = 'Plate/0.1 (self-hosted personal food log)';
 const OFF_FIELDS = 'code,product_name,brands,quantity,serving_size,nutriments,'
@@ -85,14 +87,32 @@ function cache(food) {
   return food;
 }
 
+/**
+ * How long a cached product is trusted before it is looked up again.
+ *
+ * Packaged food is reformulated, relabelled and corrected upstream. Caching a
+ * barcode forever means a yoghurt scanned today is still reported with today's
+ * recipe years from now, silently. Ninety days is short enough to catch a
+ * reformulation within a season and long enough that a daily scan still costs
+ * one request a quarter.
+ */
+const CACHE_TTL_DAYS = 90;
+
 function cachedBarcode(code) {
   const row = db.prepare('SELECT * FROM food_cache WHERE barcode = ? ORDER BY fetched_at DESC LIMIT 1')
     .get(code);
   if (!row) return null;
+
+  const fetchedAt = Date.parse(row.fetched_at);
+  const ageDays = Number.isFinite(fetchedAt)
+    ? (Date.now() - fetchedAt) / 86400000
+    : Infinity;
+
   return {
     id: row.id, source: row.source, barcode: row.barcode, name: row.name,
     per100: JSON.parse(row.per100_json), servingG: row.serving_g, cached: true,
-    hasImage: hasProductImage(row.barcode)
+    hasImage: hasProductImage(row.barcode),
+    stale: ageDays > CACHE_TTL_DAYS
   };
 }
 
@@ -106,7 +126,14 @@ async function getJson(url, timeoutMs = 12000) {
   } catch {
     throw new LookupError('unreachable', 'Could not reach the food database.', 503);
   }
-  if (!res.ok) throw new LookupError('upstream', `Food database returned ${res.status}.`, 502);
+  if (!res.ok) {
+    // The status is carried so a caller can tell "no such product" from "the
+    // service is unwell". Open Food Facts answers 404 for a barcode it does
+    // not know, which is a normal outcome of scanning, not a fault.
+    const err = new LookupError('upstream', `Food database returned ${res.status}.`, 502);
+    err.upstreamStatus = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -122,17 +149,30 @@ export async function lookupBarcode(rawCode) {
   }
 
   const hit = cachedBarcode(code);
-  if (hit) return hit;
+  if (hit && !hit.stale) return hit;
 
-  const json = await getJson(
-    `https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`);
+  let json;
+  try {
+    json = await getJson(
+      `https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`);
+  } catch (err) {
+    // A refresh that fails must not take away an answer we already had. Stale
+    // figures for a yoghurt beat an error message in a supermarket aisle.
+    if (hit) return { ...hit, refreshFailed: true };
+    if (err.upstreamStatus === 404) {
+      throw new LookupError('not_found', 'That barcode is not in the database yet.', 404);
+    }
+    throw err;
+  }
 
   if (json?.status === 0 || !json?.product) {
+    if (hit) return { ...hit, refreshFailed: true };
     throw new LookupError('not_found', 'That barcode is not in the database yet.', 404);
   }
 
   const food = fromOpenFoodFacts({ ...json.product, code });
   if (food?.imageUrl) await cacheProductImage(code, food.imageUrl);
+  if (!food && hit) return { ...hit, refreshFailed: true };
   if (!food) {
     // The product exists but carries no usable nutrition. Saying so is more
     // useful than "not found", because the remedy is different: enter it by
@@ -152,43 +192,66 @@ async function searchOpenFoodFacts(query) {
 }
 
 /**
- * USDA's own DEMO_KEY works without signup but is capped at roughly 30
- * requests an hour per IP. That is enough for the app to be useful out of the
- * box, and running dry degrades to packaged-food results rather than failing,
- * so it is a reasonable default -- but a free key removes the cap entirely and
- * should be set.
+ * Generic foods come from a table shipped with the app, not from USDA's API.
+ *
+ * The API needs a key, and a key cannot travel inside an Android build where
+ * anyone can extract it. A bundled table needs no key, no network and no rate
+ * limit -- the demo key we were using was capped at about thirty requests an
+ * hour, which a single evening of searching exhausts. It also means generic
+ * search keeps working with no connection at all.
+ *
+ * Composition of a generic food does not drift, so this is rebuilt when
+ * convenient rather than on a schedule. See scripts/build-food-table.mjs.
  */
-const DEMO_KEY = 'DEMO_KEY';
+const FOODS_DB = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'foods.sqlite');
 
-async function searchUsda(query) {
-  const key = (process.env.USDA_API_KEY || '').trim() || DEMO_KEY;
-  if (!key) return [];
+let generic = null;
+try {
+  generic = new DatabaseSync(FOODS_DB, { readOnly: true });
+  const n = generic.prepare('SELECT COUNT(*) AS n FROM foods').get().n;
+  console.log(`generic food table: ${n} foods`);
+} catch (err) {
+  // Not fatal. Barcodes and packaged search still work; generic search does
+  // not, and genericSearch() reports that rather than failing silently.
+  console.warn('generic food table unavailable:', err.message);
+  generic = null;
+}
 
-  // Foundation and SR Legacy are the generic whole-food tables; Branded is
-  // excluded because Open Food Facts already covers packaged goods and does
-  // it better.
-  const url = 'https://api.nal.usda.gov/fdc/v1/foods/search'
-    + `?query=${encodeURIComponent(query)}&pageSize=12`
-    + '&dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)'
-    + `&api_key=${encodeURIComponent(key)}`;
-
-  try {
-    const json = await getJson(url);
-    return (json?.foods || []).map(fromUsda).filter(Boolean);
-  } catch {
-    // USDA is the optional half. If it fails, packaged results are still
-    // worth returning rather than failing the whole search.
-    return [];
-  }
+export function genericSearchAvailable() {
+  return generic !== null;
 }
 
 /**
- * True when a dedicated key is set. The demo key still gives generic results,
- * but only until its hourly cap is reached, so the two are worth telling
- * apart when reporting capability.
+ * Every query word must appear, as a word or the start of one, in any order.
+ *
+ * Order-independence is the point: USDA writes names back to front, so
+ * "olive oil" has to reach "Oil, olive, salad or cooking" and "chicken breast"
+ * has to reach "Chicken, broilers or fryers, breast, meat only, raw".
  */
+function searchGeneric(query) {
+  if (!generic) return [];
+  const tokens = tokenise(query).slice(0, 6);
+  if (!tokens.length) return [];
+
+  const where = tokens.map(() => '(search LIKE ? OR search LIKE ?)').join(' AND ');
+  const args = tokens.flatMap((t) => [`${t}%`, `% ${t}%`]);
+
+  return generic.prepare(
+    `SELECT name, kcal, protein, fat, carbs FROM foods WHERE ${where} LIMIT 200`
+  ).all(...args).map((r) => ({
+    id: `usda:${r.name}`,
+    source: 'usda',
+    barcode: null,
+    name: r.name,
+    per100: { calories: r.kcal, protein: r.protein, fat: r.fat, carbs: r.carbs },
+    servingG: null
+  }));
+}
+
+/** Kept for the API shape the client already reads. */
 export function usdaConfigured() {
-  return Boolean((process.env.USDA_API_KEY || '').trim());
+  return genericSearchAvailable();
 }
 
 export async function searchFoods(rawQuery) {
@@ -197,17 +260,16 @@ export async function searchFoods(rawQuery) {
     throw new LookupError('short_query', 'Type at least two characters.', 400);
   }
 
-  const [off, usda] = await Promise.allSettled([
-    searchOpenFoodFacts(query),
-    searchUsda(query)
-  ]);
+  // The local table cannot fail or be slow, so it is not raced with anything.
+  const local = searchGeneric(query);
+  const off = await Promise.allSettled([searchOpenFoodFacts(query)]).then((r) => r[0]);
 
   const results = [
-    ...(usda.status === 'fulfilled' ? usda.value : []),
+    ...local,
     ...(off.status === 'fulfilled' ? off.value : [])
   ];
 
-  if (!results.length && off.status === 'rejected') {
+  if (!results.length && off.status === 'rejected' && !generic) {
     throw off.reason instanceof LookupError
       ? off.reason
       : new LookupError('unreachable', 'Could not reach the food database.', 503);
