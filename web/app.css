@@ -646,11 +646,15 @@ input[type="range"]::-moz-range-thumb {
 /* --------------------------------------------------------------- trends */
 
 .totals { position: relative; }
+/* Labelled, not a bare glyph. As an icon alone in the corner of a card it
+   read as decoration -- the person it was built for looked straight at it and
+   asked where the graph was. */
 .totals-more {
-  position: absolute; top: 10px; right: 10px;
-  width: 40px; height: 40px; border-radius: 11px;
+  position: absolute; top: 12px; right: 12px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 13px; border-radius: 99px;
   border: 1px solid var(--line); background: var(--surface);
-  color: var(--ink-2); display: grid; place-items: center;
+  color: var(--ink-2); font-size: .82rem; font-weight: 650;
 }
 .totals-more:active { background: var(--sunken); }
 
