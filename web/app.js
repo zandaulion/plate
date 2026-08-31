@@ -440,23 +440,39 @@ function renderWeightChart2(days, trend) {
   const points = days.map((d, i) => ({ i, kg: d.weight })).filter((p) => p.kg !== null);
   const H = 120, plot = H - 18;
 
-  if (points.length < 2) {
+  // Only a genuinely empty range draws nothing. A single reading is still
+  // something the person did and wants to see; withholding the whole chart
+  // until a trend can be fitted hides their own data from them, and the line
+  // below already says when the trend will appear.
+  if (!points.length) {
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text class="empty" x="0" y="${H / 2}">`
-      + 'Not enough weigh-ins yet.</text></svg>';
+      + 'No weigh-ins in this range yet.</text></svg>';
     return;
   }
 
   const ys = points.map((p) => p.kg);
   const lo = Math.min(...ys), hi = Math.max(...ys);
-  const span = Math.max(0.6, hi - lo);
+  const flat = hi - lo < 0.05;
+  // A single reading, or several identical ones, has no range to scale to --
+  // half a kilo either side keeps the dot off the edges without implying a
+  // spread that is not there.
+  const span = flat ? 1 : Math.max(0.6, hi - lo);
+  const base = flat ? lo - 0.5 : lo;
+
   const x = (i) => PAD_L + (i / Math.max(1, days.length - 1)) * (W - PAD_L - PAD_R);
-  const y = (kg) => 8 + (1 - (kg - lo) / span) * (plot - 16);
+  const y = (kg) => 8 + (1 - (kg - base) / span) * (plot - 16);
 
+  // Without a fitted line the dots are the whole chart, so they are drawn as
+  // the subject rather than as the faint scatter behind a line.
+  const hasFit = trend?.interceptKg !== undefined && points.length > 1;
   const dots = points.map((p) =>
-    `<circle class="dot" cx="${x(p.i).toFixed(1)}" cy="${y(p.kg).toFixed(1)}" r="2.4"/>`).join('');
+    `<circle class="dot${hasFit ? '' : ' solo'}" cx="${x(p.i).toFixed(1)}"
+       cy="${y(p.kg).toFixed(1)}" r="${hasFit ? 2.4 : 3.6}"/>`).join('');
 
+  // The fit is drawn only when there is one. Its absence is explained in words
+  // beneath the chart rather than by an empty box.
   let fit = '';
-  if (trend?.interceptKg !== undefined) {
+  if (hasFit) {
     const at = (i) => trend.interceptKg
       + trend.slopeKgPerDay * ((Date.parse(days[i].day) - trend.fitFrom) / 86400000);
     const a = points[0].i, b = points[points.length - 1].i;
@@ -464,11 +480,15 @@ function renderWeightChart2(days, trend) {
         + ` L${x(b).toFixed(1)},${y(at(b)).toFixed(1)}"/>`;
   }
 
+  const axis = flat
+    ? `<text class="axis" x="0" y="${(y(lo) + 3.5).toFixed(1)}">${lo.toFixed(1)}</text>`
+    : `<text class="axis" x="0" y="12">${hi.toFixed(1)}</text>
+       <text class="axis" x="0" y="${(plot - 6).toFixed(0)}">${lo.toFixed(1)}</text>`;
+
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img"
-      aria-label="Weight from ${lo.toFixed(1)} to ${hi.toFixed(1)} kilograms">
-    <text class="axis" x="0" y="12">${hi.toFixed(1)}</text>
-    <text class="axis" x="0" y="${(plot - 6).toFixed(0)}">${lo.toFixed(1)}</text>
-    ${dots}${fit}${ticksFor(days, x)}
+      aria-label="${points.length === 1 ? `One weigh-in, ${lo.toFixed(1)} kilograms`
+        : `Weight from ${lo.toFixed(1)} to ${hi.toFixed(1)} kilograms`}">
+    ${axis}${dots}${fit}${ticksFor(days, x)}
   </svg>`;
 }
 
@@ -549,17 +569,31 @@ async function loadTrends() {
     renderIntakeChart(h.days, h.expenditure);
 
     const t = h.weightTrend;
-    $('trend-weight').textContent = t
-      ? `${t.readings} weigh-ins over ${Math.round(t.spanDays)} days — `
-        + `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week.`
-      : 'A trend needs at least 3 weigh-ins spread over a week.';
+    const weighed = h.days.filter((d) => d.weight !== null).length;
+    if (t) {
+      $('trend-weight').textContent =
+        `${t.readings} weigh-ins over ${Math.round(t.spanDays)} days — `
+        + `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week.`;
+    } else if (!weighed) {
+      $('trend-weight').textContent = 'A trend needs 3 weigh-ins spread over a week.';
+    } else {
+      // Say what is there and what is still wanted, rather than only the rule.
+      const left = Math.max(0, 3 - weighed);
+      $('trend-weight').textContent =
+        `${weighed} weigh-in${weighed === 1 ? '' : 's'} so far. `
+        + (left
+          ? `${left} more, spread over a week, and a trend line appears.`
+          : 'Spread over a week, and a trend line appears.');
+    }
 
     const logged = h.days.filter((d) => d.calories !== null);
     const mean = logged.length
       ? Math.round(logged.reduce((a, d) => a + d.calories, 0) / logged.length) : 0;
+    // The chart already says so when it is empty; repeating it underneath is
+    // the same sentence twice.
     $('trend-intake').textContent = logged.length
       ? `${logged.length} of ${h.days.length} days logged, averaging ${mean} kcal on the days you did.`
-      : 'Nothing logged in this range yet.';
+      : '';
   } catch (err) {
     $('trend-weight').textContent = err.message;
   }
@@ -1568,9 +1602,9 @@ function renderWeightChart(rows, trend) {
   const el = $('weight-chart');
   const series = smoothSeries(rows);
 
-  if (series.length < 2) {
+  if (!series.length) {
     el.innerHTML = '<svg viewBox="0 0 300 84" preserveAspectRatio="none">'
-      + '<text class="empty" x="8" y="46">Log your weight a few times to see a trend.</text></svg>';
+      + '<text class="empty" x="8" y="46">No weigh-ins yet.</text></svg>';
     return;
   }
 
@@ -1578,8 +1612,10 @@ function renderWeightChart(rows, trend) {
   const xs = series.map((p) => p.at);
   const ys = series.map((p) => p.kg);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const spanY = Math.max(0.5, y1 - y0); // never let a flat series fill the box
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const flat = hi - lo < 0.05;
+  const y0 = flat ? lo - 0.5 : lo;
+  const spanY = flat ? 1 : Math.max(0.5, hi - lo); // never let a flat series fill the box
 
   const px = (t) => pad + ((t - x0) / Math.max(1, x1 - x0)) * (w - pad * 2);
   const py = (kg) => h - pad - ((kg - y0) / spanY) * (h - pad * 2);

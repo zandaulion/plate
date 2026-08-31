@@ -367,6 +367,13 @@ Tapping the totals card opens two charts over a shared date axis, at 14, 30 or
 the expenditure figure is computed from, so the picture and the number cannot
 disagree.
 
+The readings are drawn from the very first one. Only a genuinely empty range
+shows nothing: withholding the chart until a trend can be fitted hides
+someone's own data from them, and the caption below already says how many more
+weigh-ins are wanted and what will happen when they arrive. Without a line the
+dots are drawn as the subject rather than as faint scatter, because at that
+point they are the whole chart.
+
 **What you ate** — a bar per day, stacked by where its energy came from, with a
 dashed line at what you burn. Stacked by *energy* rather than grams on purpose:
 the bar's height is then the day's calories and its composition is the macro

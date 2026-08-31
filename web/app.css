@@ -666,6 +666,7 @@ input[type="range"]::-moz-range-thumb {
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .axis { fill: var(--ink-3); font-size: 10px; }
 .chart .dot { fill: var(--ink-3); opacity: .55; }
+.chart .dot.solo { fill: var(--accent); opacity: 1; }
 .chart .fit { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; }
 .chart .burn { stroke: var(--ink-2); stroke-width: 1.6; stroke-dasharray: 5 4; }
 .chart .burn-label { fill: var(--ink-2); font-size: 10px; font-weight: 600; }
