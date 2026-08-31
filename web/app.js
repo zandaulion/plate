@@ -824,7 +824,7 @@ $('file-input').addEventListener('change', async (ev) => {
   if (!file) return;
 
   openReview('photo');
-  setStatus('<span class="spinner"></span>Reading the photo…');
+  busy('Reading the photo…');
 
   try {
     state.photo = await prepareImage(file);
@@ -834,7 +834,7 @@ $('file-input').addEventListener('change', async (ev) => {
     if (!screenIsOpen('review')) return;
     $('review-photo').src = state.photo.objectUrl;
 
-    setStatus('<span class="spinner"></span>Working out what is on the plate…');
+    busy('Working out what is on the plate…');
     const analyseAt = Date.now();
     track('analyse_start');
     const data = await api('/api/analyse', {
@@ -846,18 +846,18 @@ $('file-input').addEventListener('change', async (ev) => {
     track('analyse_ok', { seconds: (Date.now() - analyseAt) / 1000, items: data.estimate.items.length });
     state.estimate = data.estimate;
     state.meal = guessMeal();
-    setStatus('');
+    idle();
     initWeightSlider();
     renderReview();
   } catch (err) {
     if (!screenIsOpen('review')) return;
     track('analyse_fail', { code: err.code || 'unknown' });
     if (err.code === 'not_food') {
-      setStatus(err.note || 'That does not look like food. Try another photo.', true);
+      failed(err.note || 'That does not look like food. Try another photo.');
     } else if (err.code === 'nothing_found') {
-      setStatus(err.note || 'Nothing recognisable in that photo. Try a clearer one.', true);
+      failed(err.note || 'Nothing recognisable in that photo. Try a clearer one.');
     } else if (err.message !== 'not_registered') {
-      setStatus(err.message, true);
+      failed(err.message);
     }
   }
 });
@@ -870,14 +870,48 @@ function guessMeal() {
   return 'snack';
 }
 
-function setStatus(html, isError = false) {
-  // Anything shown to the person as a failure is worth counting, whatever
-  // produced it.
-  if (isError && html) track('error_shown', { where: 'review' });
-  const el = $('review-status');
-  el.innerHTML = html;
-  el.classList.toggle('err', isError);
+/**
+ * Waiting on the model, and the failures that come back from it.
+ *
+ * These were a line of small print at the foot of the review sheet. On a
+ * scrolled sheet that line sits under the save bar, so the one thing actually
+ * happening was the one thing you could not see.
+ *
+ * The two states behave differently on purpose. A wait cannot be dismissed --
+ * there is nothing to do but wait, and the sheet underneath is about to be
+ * replaced. A failure must be dismissed, because it is the app declining to do
+ * what was asked and that should not scroll quietly past.
+ */
+function busy(text) {
+  const el = $('wait');
+  el.hidden = false;
+  el.classList.remove('err');
+  $('wait-spin').hidden = false;
+  $('wait-msg').textContent = text;
+  $('wait-ok').hidden = true;
 }
+
+function failed(text) {
+  if (!text) return idle();
+  track('error_shown', { where: 'review' });
+  const el = $('wait');
+  el.hidden = false;
+  el.classList.add('err');
+  $('wait-spin').hidden = true;
+  $('wait-msg').textContent = text;
+  $('wait-ok').hidden = false;
+  // Registered as a screen so the back gesture dismisses the message rather
+  // than the sheet behind it.
+  if (!screenIsOpen('alert')) openScreen('alert', () => { $('wait').hidden = true; });
+  $('wait-ok').focus();
+}
+
+function idle() {
+  if (screenIsOpen('alert')) return dismissScreen('alert');
+  $('wait').hidden = true;
+}
+
+$('wait-ok').addEventListener('click', () => dismissScreen('alert'));
 
 // ---------------------------------------------------------------- review
 
@@ -924,7 +958,7 @@ function openReview(mode, entry = null) {
   $('finder-hint').textContent = state.me?.genericSearch === false
     ? 'Generic foods may be missing — search covers packaged products best.'
     : '';
-  setStatus('');
+  idle();
 
   if (entry) {
     renderReview();
@@ -971,6 +1005,10 @@ function teardownReview() {
   state.photo = null;
   state.editingId = null;
   state.existingPhotoId = null;
+  // A request may still be in flight -- the reply checks whether the sheet is
+  // still open and returns without clearing anything, so the overlay has to
+  // come down with the sheet or it would outlive it.
+  $('wait').hidden = true;
   $('review').hidden = true;
 }
 
@@ -1323,7 +1361,7 @@ $('correct-go').addEventListener('click', async () => {
   }
 
   $('correct-go').disabled = true;
-  setStatus('<span class="spinner"></span>Reading it again…');
+  busy('Reading it again…');
   track('correct_submit', { chars: correction.length });
   const startedAt = Date.now();
 
@@ -1342,7 +1380,7 @@ $('correct-go').addEventListener('click', async () => {
 
     track('correct_ok', { seconds: (Date.now() - startedAt) / 1000, items: data.estimate.items.length });
     state.estimate = { ...data.estimate, note: `You said: ${correction}` };
-    setStatus('');
+    idle();
     $('correct-form').hidden = true;
     $('correct-toggle').setAttribute('aria-expanded', 'false');
     $('correct-text').value = '';
@@ -1351,7 +1389,7 @@ $('correct-go').addEventListener('click', async () => {
     toast('Read again');
   } catch (err) {
     track('correct_fail', { code: err.code || 'unknown' });
-    setStatus(err.message, true);
+    failed(err.message);
   } finally {
     $('correct-go').disabled = false;
   }
@@ -1613,7 +1651,7 @@ $('save-entry').addEventListener('click', async () => {
   if (!state.estimate || state.busy) return;
   state.busy = true;
   $('save-entry').disabled = true;
-  setStatus('<span class="spinner"></span>Saving…');
+  busy('Saving…');
 
   const body = {
     meal: state.meal,
@@ -1642,11 +1680,15 @@ $('save-entry').addEventListener('click', async () => {
     state.savedFromReview = true;
     track(state.mode === 'edit' ? 'entry_edited' : 'entry_saved',
       { mode: state.mode, items: state.estimate.items.length, portion: portionSourceOf(state.estimate) });
+    // Ahead of closeReview() rather than leaning on the teardown: dismissing a
+    // screen goes through history.go(), which is asynchronous, and the overlay
+    // would otherwise linger over the toast for a frame or two.
+    idle();
     closeReview();
     toast(state.mode === 'edit' ? 'Updated' : 'Logged');
     await loadDay();
   } catch (err) {
-    setStatus(err.message, true);
+    failed(err.message);
     $('save-entry').disabled = false;
   } finally {
     state.busy = false;

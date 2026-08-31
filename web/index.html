@@ -232,8 +232,6 @@
         </fieldset>
       </div>
 
-      <div id="review-status" class="status" role="status"></div>
-
       <footer class="sheet-foot">
         <button id="save-entry" class="primary" type="button">Save</button>
       </footer>
@@ -369,6 +367,17 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- Waiting on the model, and the failures that come back from it. Both were
+     a line of small print at the foot of the sheet, under the fold and behind
+     the save bar, which is no place for the only thing happening. -->
+<div id="wait" class="wait" hidden>
+  <div class="wait-card" role="alertdialog" aria-modal="true" aria-labelledby="wait-msg">
+    <div id="wait-spin" class="wait-spin" aria-hidden="true"></div>
+    <p id="wait-msg"></p>
+    <button id="wait-ok" class="primary" type="button" hidden>OK</button>
+  </div>
+</div>
 
 <script type="module" src="/app.js"></script>
 </body>

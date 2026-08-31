@@ -330,9 +330,6 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600;
 }
 
-.status { padding: 0 16px; color: var(--ink-2); font-size: .88rem; min-height: 0; }
-.status:not(:empty) { padding-bottom: 10px; }
-.status.err { color: var(--danger); }
 
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-row label, .stack > label { display: flex; flex-direction: column; gap: 6px;
@@ -351,14 +348,44 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: var(--shadow); max-width: 90vw; text-align: center;
 }
 
-.spinner {
-  display: inline-block; width: 15px; height: 15px; vertical-align: -2px;
-  border: 2px solid color-mix(in srgb, var(--ink-3) 40%, transparent);
-  border-top-color: var(--accent); border-radius: 50%;
-  animation: spin .8s linear infinite; margin-right: 8px;
-}
 @keyframes spin { to { transform: rotate(360deg) } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s } }
+
+/* ------------------------------------------------------ waiting, failing */
+
+/* Centred rather than in the flow of the sheet: while the model is reading,
+   this is the only thing happening, and at the foot of a scrolled sheet it
+   was hidden behind the save bar. */
+.wait {
+  /* Above the scanner, which is also fixed and full-screen: a failure has to
+     be readable over the camera, not behind it. */
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.wait-card {
+  background: var(--surface); color: var(--ink);
+  border-radius: 18px; padding: 26px 24px; box-shadow: var(--shadow);
+  max-width: 340px; width: 100%; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+.wait-card p { font-size: 1.05rem; line-height: 1.45; margin: 0; }
+.wait-card .primary { width: 100%; }
+.wait.err .wait-card p { color: var(--danger); }
+
+/* Large, and on its own line: it carries the whole sense of "something is
+   happening" now. */
+.wait-spin {
+  width: 30px; height: 30px;
+  border: 3px solid color-mix(in srgb, var(--ink-3) 35%, transparent);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .wait-spin { animation-duration: 3s } }
+
+/* The search hint stays in the flow -- it belongs beside the box being typed
+   into, and a pop-up on every keystroke would cover the results being waited
+   for. It was simply too quiet to read. */
+.finder .hint { font-size: .95rem; color: var(--ink-2); }
 
 /* ---------------------------------------------------------- food finder */
 
