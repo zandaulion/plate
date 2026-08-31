@@ -404,6 +404,185 @@ $('entries').addEventListener('click', async (ev) => {
   if (entry) openReview('edit', entry);
 });
 
+// ---------------------------------------------------------------- trends
+
+const W = 320, PAD_L = 30, PAD_R = 8;
+
+const dayLabel = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+};
+
+/** Evenly spaced date ticks that always include the first and last day. */
+function ticksFor(days, x) {
+  if (days.length < 2) return '';
+  const want = Math.min(4, days.length);
+  const step = (days.length - 1) / (want - 1);
+  const out = [];
+  for (let i = 0; i < want; i++) {
+    const idx = Math.round(i * step);
+    const anchor = i === 0 ? 'start' : i === want - 1 ? 'end' : 'middle';
+    out.push(`<text class="axis" x="${x(idx).toFixed(1)}" y="100%" dy="-1"
+      text-anchor="${anchor}">${esc(dayLabel(days[idx].day))}</text>`);
+  }
+  return out.join('');
+}
+
+/**
+ * Weight over the range: readings as dots, the least-squares fit as the line.
+ *
+ * Same choice as the small chart in You -- the line is the fit the expenditure
+ * figure is computed from, not a moving average, so the picture and the number
+ * cannot disagree.
+ */
+function renderWeightChart2(days, trend) {
+  const el = $('chart-weight');
+  const points = days.map((d, i) => ({ i, kg: d.weight })).filter((p) => p.kg !== null);
+  const H = 120, plot = H - 18;
+
+  if (points.length < 2) {
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text class="empty" x="0" y="${H / 2}">`
+      + 'Not enough weigh-ins yet.</text></svg>';
+    return;
+  }
+
+  const ys = points.map((p) => p.kg);
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const span = Math.max(0.6, hi - lo);
+  const x = (i) => PAD_L + (i / Math.max(1, days.length - 1)) * (W - PAD_L - PAD_R);
+  const y = (kg) => 8 + (1 - (kg - lo) / span) * (plot - 16);
+
+  const dots = points.map((p) =>
+    `<circle class="dot" cx="${x(p.i).toFixed(1)}" cy="${y(p.kg).toFixed(1)}" r="2.4"/>`).join('');
+
+  let fit = '';
+  if (trend?.interceptKg !== undefined) {
+    const at = (i) => trend.interceptKg
+      + trend.slopeKgPerDay * ((Date.parse(days[i].day) - trend.fitFrom) / 86400000);
+    const a = points[0].i, b = points[points.length - 1].i;
+    fit = `<path class="fit" d="M${x(a).toFixed(1)},${y(at(a)).toFixed(1)}`
+        + ` L${x(b).toFixed(1)},${y(at(b)).toFixed(1)}"/>`;
+  }
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="Weight from ${lo.toFixed(1)} to ${hi.toFixed(1)} kilograms">
+    <text class="axis" x="0" y="12">${hi.toFixed(1)}</text>
+    <text class="axis" x="0" y="${(plot - 6).toFixed(0)}">${lo.toFixed(1)}</text>
+    ${dots}${fit}${ticksFor(days, x)}
+  </svg>`;
+}
+
+/**
+ * Daily intake, each bar stacked by where its energy came from.
+ *
+ * Stacked by *energy* rather than grams, so the bar's height is the day's
+ * calories and its composition is the macro split -- one chart answering both
+ * questions instead of two that have to be read together. The dashed line is
+ * expenditure, which is what makes the picture mean anything: bars above it
+ * are surplus days, bars below are deficit ones.
+ */
+function renderIntakeChart(days, expenditure) {
+  const el = $('chart-intake');
+  const H = 150, plot = H - 18;
+  const logged = days.filter((d) => d.calories !== null);
+
+  if (!logged.length) {
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}"><text class="empty" x="0" y="${H / 2}">`
+      + 'Nothing logged in this range.</text></svg>';
+    return;
+  }
+
+  const burn = expenditure?.available ? expenditure.kcal : null;
+  const top = Math.max(...logged.map((d) => d.calories), burn || 0) * 1.12 || 1;
+
+  const x = (i) => PAD_L + (i / Math.max(1, days.length - 1)) * (W - PAD_L - PAD_R);
+  const y = (kcal) => 8 + (1 - kcal / top) * (plot - 16);
+  const bw = Math.max(1.6, Math.min(9, (W - PAD_L - PAD_R) / days.length - 1.4));
+
+  const bars = days.map((d, i) => {
+    if (d.calories === null) return '';
+    // Energy per macro, so the segments sum to the bar rather than to grams.
+    const parts = [
+      ['bar-p', (d.protein || 0) * 4],
+      ['bar-c', (d.carbs || 0) * 4],
+      ['bar-f', (d.fat || 0) * 9]
+    ];
+    const sum = parts.reduce((a, [, v]) => a + v, 0);
+    // Scale to the recorded calorie total, so a day whose macros do not quite
+    // add up still draws a bar of the right height.
+    const k = sum > 0 ? d.calories / sum : 0;
+
+    let cursor = 0;
+    return parts.map(([cls, v]) => {
+      const h = v * k;
+      if (h <= 0) return '';
+      const y0 = y(cursor + h), y1 = y(cursor);
+      cursor += h;
+      return `<rect class="${cls}" x="${(x(i) - bw / 2).toFixed(1)}" y="${y0.toFixed(1)}"
+        width="${bw.toFixed(1)}" height="${Math.max(0.6, y1 - y0).toFixed(1)}"/>`;
+    }).join('');
+  }).join('');
+
+  const burnLine = burn ? `
+    <line class="burn" x1="${PAD_L}" x2="${W - PAD_R}" y1="${y(burn).toFixed(1)}" y2="${y(burn).toFixed(1)}"/>
+    <text class="burn-label" x="${W - PAD_R}" y="${(y(burn) - 4).toFixed(1)}" text-anchor="end">${burn} burn</text>` : '';
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="Daily calories, stacked by macronutrient">
+    <text class="axis" x="0" y="12">${Math.round(top)}</text>
+    ${bars}${burnLine}${ticksFor(days, x)}
+  </svg>`;
+
+  $('chart-legend').innerHTML =
+    `<span><i style="background:var(--protein)"></i>Protein</span>`
+    + `<span><i style="background:var(--carbs)"></i>Carbs</span>`
+    + `<span><i style="background:var(--fat)"></i>Fat</span>`
+    + (burn ? `<span><i class="dash"></i>What you burn</span>` : '');
+}
+
+let trendsRange = 30;
+
+async function loadTrends() {
+  try {
+    const h = await api(`/api/history?days=${trendsRange}`);
+    renderWeightChart2(h.days, h.weightTrend);
+    renderIntakeChart(h.days, h.expenditure);
+
+    const t = h.weightTrend;
+    $('trend-weight').textContent = t
+      ? `${t.readings} weigh-ins over ${Math.round(t.spanDays)} days — `
+        + `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week.`
+      : 'A trend needs at least 3 weigh-ins spread over a week.';
+
+    const logged = h.days.filter((d) => d.calories !== null);
+    const mean = logged.length
+      ? Math.round(logged.reduce((a, d) => a + d.calories, 0) / logged.length) : 0;
+    $('trend-intake').textContent = logged.length
+      ? `${logged.length} of ${h.days.length} days logged, averaging ${mean} kcal on the days you did.`
+      : 'Nothing logged in this range yet.';
+  } catch (err) {
+    $('trend-weight').textContent = err.message;
+  }
+}
+
+$('range-picker').addEventListener('click', (ev) => {
+  const range = Number(ev.target.closest('[data-range]')?.dataset.range);
+  if (!range) return;
+  trendsRange = range;
+  document.querySelectorAll('#range-picker [data-range]').forEach((b) =>
+    b.setAttribute('aria-pressed', String(Number(b.dataset.range) === range)));
+  loadTrends();
+});
+
+const closeTrends = () => dismissScreen('trends');
+$('open-trends').addEventListener('click', () => {
+  $('trends').hidden = false;
+  openScreen('trends', () => { $('trends').hidden = true; });
+  loadTrends();
+});
+$('trends-close').addEventListener('click', closeTrends);
+$('trends').addEventListener('click', (ev) => { if (ev.target === $('trends')) closeTrends(); });
+
 // --------------------------------------------------------------- weigh-in
 
 // A dial and a needle, not a box with an arrow -- the first attempt read as
@@ -434,9 +613,10 @@ function renderWeigh(day, weight, expenditure) {
   const el = $('weigh');
   const isToday = day === localDayKey();
 
-  // A past day can still be corrected, but it should never nag: the prompt is
-  // for the day you are actually living through.
-  if (weight?.today === null && (!isToday || isDismissed(day))) {
+  // A missed day can be filled in later -- the expenditure estimate wants
+  // coverage, and a forgotten Tuesday should be repairable on Wednesday. Only
+  // today's prompt can be dismissed; a past day simply offers, quietly.
+  if (weight?.today === null && isToday && isDismissed(day)) {
     el.hidden = true;
     return;
   }
@@ -463,18 +643,22 @@ function renderWeigh(day, weight, expenditure) {
     const sub = left
       ? `${left} more and this becomes a measurement`
       : 'keeps the estimate honest';
+    const title = isToday ? 'Weigh in' : 'No weight for this day';
+    const line = isToday ? sub : 'Fill it in — it counts towards the estimate.';
     el.innerHTML = `
       <div style="display:flex;align-items:center">
         <button class="weigh-row" type="button" id="weigh-open">
           <span class="ico">${SCALE_ICON}</span>
-          <span class="lab">Weigh in<span class="sub">${esc(sub)}</span></span>
+          <span class="lab">${esc(title)}<span class="sub">${esc(line)}</span></span>
           <span class="val dim">${weight?.last ? `${weight.last.toFixed(1)} kg` : ''}</span>
           <span class="chev" aria-hidden="true">&rsaquo;</span>
         </button>
-        <button class="weigh-dismiss" type="button" id="weigh-skip"
-                aria-label="Not today">&times;</button>
+        ${isToday ? `<button class="weigh-dismiss" type="button" id="weigh-skip"
+                aria-label="Not today">&times;</button>` : ''}
       </div>`;
-    $('weigh-skip').addEventListener('click', () => { dismiss(day); renderWeigh(day, weight, expenditure); });
+    if (isToday) {
+      $('weigh-skip').addEventListener('click', () => { dismiss(day); renderWeigh(day, weight, expenditure); });
+    }
   }
 
   $('weigh-open').addEventListener('click', () => openWeighEditor(day, weight));

@@ -377,16 +377,21 @@ app.get('/api/entries', requireDevice, (req, res) => {
   // Weight rides along with the day rather than being a second request: the
   // day view now offers weighing in, and a prompt that arrives after the rest
   // of the screen has painted would flicker into place.
-  const weights = weightRows(req.device.account_id, 60);
+  const weights = weightRows(req.device.account_id, 120);
   const todays = weights.find((w) => w.day === day) || null;
+
+  // What to pre-fill with when the day has no reading. The nearest reading
+  // *before* the day in question, not simply the most recent overall --
+  // filling in a missed Tuesday should start from Monday, not from Friday.
+  const before = weights.filter((w) => w.day <= day);
+  const nearest = before.length ? before[before.length - 1]
+    : (weights.length ? weights[0] : null);
 
   res.json({
     day, entries: rows, summary, expenditure, split: macroSplit(summary.totals),
     weight: {
       today: todays ? todays.kg : null,
-      // What to pre-fill with when there is no reading yet. Weight moves
-      // slowly, so the last one is nearly always within a nudge of the answer.
-      last: weights.length ? weights[weights.length - 1].kg : null,
+      last: nearest ? nearest.kg : null,
       trend: weightTrend(weights)
     }
   });
@@ -539,6 +544,59 @@ function expenditureFor(accountId) {
 
 app.get('/api/expenditure', requireDevice, (req, res) => {
   res.json(expenditureFor(req.device.account_id));
+});
+
+// --------------------------------------------------------------- history
+
+/**
+ * A dense day-by-day series: intake, its macro split, and weight.
+ *
+ * Dense on purpose -- every day in the range appears, with nulls where nothing
+ * was logged. A chart drawn from only the days that have data spaces them
+ * evenly and quietly lies about time, turning a week's gap into one step.
+ */
+app.get('/api/history', requireDevice, (req, res) => {
+  const days = Math.min(180, Math.max(7, Number(req.query.days) || 30));
+  const account = req.device.account_id;
+
+  const end = new Date();
+  const start = new Date(end.getTime() - (days - 1) * 86400000);
+  const key = (d) => d.toISOString().slice(0, 10);
+  const from = key(start);
+
+  const intake = new Map(db.prepare(`
+    SELECT day,
+           SUM(json_extract(totals_json, '$.calories')) AS calories,
+           SUM(json_extract(totals_json, '$.protein'))  AS protein,
+           SUM(json_extract(totals_json, '$.fat'))      AS fat,
+           SUM(json_extract(totals_json, '$.carbs'))    AS carbs,
+           COUNT(*) AS entries
+    FROM entries WHERE account_id = ? AND day >= ?
+    GROUP BY day
+  `).all(account, from).map((r) => [r.day, r]));
+
+  const weights = new Map(weightRows(account, days + 1).map((w) => [w.day, w.kg]));
+
+  const series = [];
+  for (let i = 0; i < days; i++) {
+    const day = key(new Date(start.getTime() + i * 86400000));
+    const r = intake.get(day);
+    series.push({
+      day,
+      calories: r ? Math.round(r.calories) : null,
+      protein: r ? Math.round(r.protein * 10) / 10 : null,
+      fat: r ? Math.round(r.fat * 10) / 10 : null,
+      carbs: r ? Math.round(r.carbs * 10) / 10 : null,
+      entries: r ? r.entries : 0,
+      weight: weights.has(day) ? weights.get(day) : null
+    });
+  }
+
+  res.json({
+    from, to: key(end), days: series,
+    expenditure: expenditureFor(account),
+    weightTrend: weightTrend(weightRows(account, days + 1))
+  });
 });
 
 // ---------------------------------------------------------------- export

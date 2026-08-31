@@ -907,3 +907,82 @@ test('expenditure reports which profile details are still missing', async () => 
   assert.deepEqual(exp.profileMissing, [], 'sex is not required');
   assert.equal(exp.available, true);
 });
+
+test('a missed day pre-fills from the reading before it, not the latest', async () => {
+  const { auth } = await registerDevice();
+  const put = (day, kg) => api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day, kg }) });
+
+  await put('2026-07-06', 80);   // Monday
+  await put('2026-07-10', 78);   // Friday
+
+  // Filling in the missed Tuesday should start from Monday's 80, not Friday's
+  // 78 -- the later reading is evidence about a day that had not happened yet.
+  const tue = await (await api('/api/entries?day=2026-07-07', { headers: auth })).json();
+  assert.equal(tue.weight.today, null);
+  assert.equal(tue.weight.last, 80);
+
+  const sat = await (await api('/api/entries?day=2026-07-11', { headers: auth })).json();
+  assert.equal(sat.weight.last, 78, 'after the last reading, the last reading is nearest');
+});
+
+test('a day before any reading falls back to the earliest one', async () => {
+  const { auth } = await registerDevice();
+  await api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day: '2026-07-20', kg: 75 }) });
+  const earlier = await (await api('/api/entries?day=2026-07-15', { headers: auth })).json();
+  assert.equal(earlier.weight.last, 75);
+});
+
+// ------------------------------------------------------------------ history
+
+test('history returns a dense series, gaps included', async () => {
+  const { auth } = await registerDevice();
+  const dayKey = (back) => new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+
+  // Two logged days three days apart, so the gap between them is real.
+  for (const back of [5, 2]) {
+    await api('/api/entries', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({
+        day: dayKey(back),
+        items: [{ name: 'x', grams: 500, per: { calories: 4, protein: 0.05, fat: 0.03, carbs: 0.1 } }]
+      })
+    });
+  }
+  await api('/api/weights', { method: 'PUT', headers: auth, body: JSON.stringify({ day: dayKey(5), kg: 80 }) });
+
+  const h = await (await api('/api/history?days=7', { headers: auth })).json();
+  assert.equal(h.days.length, 7, 'every day in the range appears');
+
+  // A chart drawn only from days with data would show these as adjacent.
+  const logged = h.days.filter((d) => d.calories !== null);
+  assert.equal(logged.length, 2);
+  assert.equal(h.days.filter((d) => d.calories === null).length, 5);
+
+  const first = h.days.find((d) => d.day === dayKey(5));
+  assert.equal(first.calories, 2000);
+  assert.equal(first.protein, 25);
+  assert.equal(first.weight, 80);
+  assert.equal(h.days.find((d) => d.day === dayKey(4)).weight, null);
+});
+
+test('history clamps the range rather than trusting the query', async () => {
+  const { auth } = await registerDevice();
+  for (const [q, expected] of [['1', 7], ['999', 180], ['nonsense', 30], ['', 30]]) {
+    const h = await (await api(`/api/history?days=${q}`, { headers: auth })).json();
+    assert.equal(h.days.length, expected, `days=${q}`);
+  }
+});
+
+test('history is scoped to the account', async () => {
+  const a = await registerDevice();
+  const b = await registerDevice();
+  await api('/api/entries', {
+    method: 'POST', headers: a.auth,
+    body: JSON.stringify({
+      day: new Date().toISOString().slice(0, 10),
+      items: [{ name: 'x', grams: 100, per: { calories: 1, protein: 0, fat: 0, carbs: 0 } }]
+    })
+  });
+  const theirs = await (await api('/api/history?days=7', { headers: b.auth })).json();
+  assert.ok(theirs.days.every((d) => d.calories === null));
+});

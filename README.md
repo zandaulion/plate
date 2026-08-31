@@ -301,8 +301,15 @@ input the expenditure estimate depends on, so burying it beside account
 configuration made the one thing the algorithm needs the hardest thing to do.
 
 The row asks while the day has no reading and reports the value and trend once
-it does, so it stops being a prompt rather than becoming a nag. It can be
-dismissed for the day, and a past day with no reading never asks at all.
+it does, so it stops being a prompt rather than becoming a nag. Today's prompt
+can be dismissed; a past day offers quietly and cannot be dismissed, because a
+forgotten Tuesday should still be repairable on Wednesday — the estimate wants
+coverage, and a missed morning is otherwise unfixable.
+
+Backfilling pre-fills from the nearest reading **before** that day rather than
+the most recent overall: filling in a missed Tuesday should start from Monday,
+not from Friday, since a later reading is evidence about a day that had not
+happened yet.
 
 Tapping it opens a stepper **pre-filled from the most recent reading**, with
 ±100 g buttons. Weight moves slowly, so yesterday's number is nearly always
@@ -339,6 +346,27 @@ so it uses the stated calories and points out that one of them is off.
 The threshold has slack for a reason: fibre counts as carbohydrate on EU labels
 but yields about 2 kcal/g rather than 4, and panels are rounded, so small gaps
 are normal.
+
+## Trends
+
+Tapping the totals card opens two charts over a shared date axis, at 14, 30 or
+90 days.
+
+**Weight** — readings as dots, the least-squares fit as the line. The same fit
+the expenditure figure is computed from, so the picture and the number cannot
+disagree.
+
+**What you ate** — a bar per day, stacked by where its energy came from, with a
+dashed line at what you burn. Stacked by *energy* rather than grams on purpose:
+the bar's height is then the day's calories and its composition is the macro
+split, so one chart answers both questions instead of two that have to be read
+together. The burn line is what makes it mean anything — bars above it are
+surplus days, bars below are deficit ones, and the weight panel above shows the
+consequence.
+
+The series is **dense**: every day in the range is drawn, with a gap where
+nothing was logged. A chart built only from days that have data spaces them
+evenly and quietly lies about time, turning a week's silence into one step.
 
 ## Export
 

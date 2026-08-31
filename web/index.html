@@ -65,6 +65,12 @@
 
     <section class="totals" aria-labelledby="totals-heading">
       <h2 id="totals-heading" class="sr-only">Day total</h2>
+      <button id="open-trends" class="totals-more" type="button" aria-label="Show trends">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none"
+             stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 18V9M9.3 18V5M14.7 18v-6M20 18v-9"/>
+        </svg>
+      </button>
       <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>
       <div id="maintenance" class="maintenance"></div>
       <div id="split" class="split" role="img" aria-label="Macronutrient split"></div>
@@ -220,6 +226,32 @@
   <!-- Two sheets, because these are two different kinds of thing: who you are
        and how the app is set up. Body measurements sitting next to device
        revocation made both harder to find. -->
+  <div id="trends" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="trends-heading">
+    <div class="sheet-inner">
+      <header class="sheet-head">
+        <h2 id="trends-heading">Trends</h2>
+        <button id="trends-close" class="icon-btn" aria-label="Close">&times;</button>
+      </header>
+
+      <div id="trends-body">
+        <div class="chips range" id="range-picker">
+          <button class="chip" type="button" data-range="14" aria-pressed="false">14 days</button>
+          <button class="chip" type="button" data-range="30" aria-pressed="true">30 days</button>
+          <button class="chip" type="button" data-range="90" aria-pressed="false">90 days</button>
+        </div>
+
+        <h3 class="section-head">Weight</h3>
+        <div id="chart-weight" class="chart"></div>
+        <p class="hint" id="trend-weight"></p>
+
+        <h3 class="section-head">What you ate</h3>
+        <div id="chart-intake" class="chart"></div>
+        <div id="chart-legend" class="legend"></div>
+        <p class="hint" id="trend-intake"></p>
+      </div>
+    </div>
+  </div>
+
   <div id="profile" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="profile-heading">
     <div class="sheet-inner">
       <header class="sheet-head">
