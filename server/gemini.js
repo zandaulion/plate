@@ -3,7 +3,7 @@
 // The prompt and response schema live in core/analysis/prompt.js so the
 // Android app can send exactly the same request; only transport belongs here.
 
-import { PROMPT, RESPONSE_SCHEMA } from '../core/analysis/prompt.js';
+import { buildPrompt, RESPONSE_SCHEMA } from '../core/analysis/prompt.js';
 
 const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
@@ -27,7 +27,7 @@ export class AnalysisError extends Error {
  * actually costs per meal; the measured figure was $0.0011, and that should be
  * observable in production rather than assumed from a one-off probe.
  */
-export async function analysePhoto(imageBase64, mimeType = 'image/jpeg') {
+export async function analysePhoto(imageBase64, mimeType = 'image/jpeg', correction = null) {
   const key = getKey();
   if (!key) {
     throw new AnalysisError('not_configured', 'Photo analysis is not configured on this server.', 503);
@@ -37,7 +37,7 @@ export async function analysePhoto(imageBase64, mimeType = 'image/jpeg') {
     contents: [{
       parts: [
         { inline_data: { mime_type: mimeType, data: imageBase64 } },
-        { text: PROMPT }
+        { text: buildPrompt(correction) }
       ]
     }],
     generationConfig: {

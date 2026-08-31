@@ -21,6 +21,10 @@ export const EVENTS = [
   // The photo path, which costs money and can fail.
   'analyse_start', 'analyse_ok', 'analyse_fail',
 
+  // Correcting a misidentification, as opposed to a portion. How often this
+  // is needed says how much the photo path can be trusted on its own.
+  'correct_open', 'correct_submit', 'correct_ok', 'correct_fail',
+
   // The correction the whole design rests on.
   'portion_slider', 'portion_item_step', 'portion_item_typed', 'portion_weighed_ticked',
 
@@ -113,7 +117,11 @@ export function summariseEvents(rows) {
     photo: {
       attempts: count('analyse_start'),
       failures: count('analyse_fail'),
-      medianSeconds: median(props('analyse_ok').map((p) => p.seconds).filter(Number.isFinite))
+      medianSeconds: median(props('analyse_ok').map((p) => p.seconds).filter(Number.isFinite)),
+      // How often the model named the wrong food, which portion correction
+      // cannot fix and which nothing else in the log would reveal.
+      correctionsAsked: count('correct_submit'),
+      correctionsApplied: count('correct_ok')
     },
 
     scanning: {

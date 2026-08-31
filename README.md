@@ -363,6 +363,27 @@ rather than a moving average because the fit is what the expenditure figure was
 computed from; drawing a different smoother would put a line on screen that
 disagrees with the number beside it.
 
+## Correcting what the model saw
+
+A photograph can be read confidently and wrongly. A vegetarian shawarma and a
+chicken one look alike, and no amount of portion adjustment fixes the wrong
+food — the weight slider assumes the identification was right.
+
+So a photo estimate carries **"Not what you're eating?"**. Say what it actually
+is and the same photograph is read again with that correction, using the image
+already in memory: one more model call, no second picture. The correction is
+kept on the entry's note, so the log records why its numbers changed.
+
+The wording matters. The correction is given to the model as fact rather than
+as something to weigh up — a model asked to *consider* an alternative usually
+keeps its own answer — and it is told to work the dish out from the start
+rather than adjust, because swapping chicken for falafel changes the whole
+nutrition rather than one line of it.
+
+This is the only recourse for food that no database holds. The bundled table
+has no shawarma, kebab, gyro, seitan or halloumi: USDA is American, Open Food
+Facts is packaged goods, and a restaurant wrap in Bucharest is in neither.
+
 ## Typing in a printed panel
 
 When a menu or a label states the numbers, they can be typed in directly,

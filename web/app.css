@@ -681,3 +681,11 @@ input[type="range"]::-moz-range-thumb {
 .legend i.dash {
   width: 16px; height: 0; border-top: 2px dashed var(--ink-2); border-radius: 0;
 }
+
+
+/* ------------------------------------------------------ correcting the AI */
+
+.correct { margin-top: 10px; }
+.correct #correct-form { display: flex; flex-direction: column; gap: 9px; margin-top: 4px; }
+.correct input { width: 100%; }
+.correct .secondary { width: 100%; }

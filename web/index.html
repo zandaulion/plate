@@ -137,6 +137,22 @@
 
         <p id="review-note" class="note" hidden></p>
 
+        <!-- A photograph can be read confidently and wrongly, and no amount of
+             portion adjustment fixes the wrong food. Only shown for photo
+             estimates, since there is nothing to re-read otherwise. -->
+        <section id="correct-block" class="correct" hidden>
+          <button id="correct-toggle" class="link-btn" type="button" aria-expanded="false">
+            Not what you're eating?
+          </button>
+          <div id="correct-form" hidden>
+            <label class="sr-only" for="correct-text">What is it really?</label>
+            <input id="correct-text" type="text" autocomplete="off"
+                   placeholder="e.g. it's vegetarian, not chicken">
+            <button id="correct-go" class="secondary" type="button">Read it again</button>
+            <p class="hint">Your word beats the photo. It works the whole dish out afresh.</p>
+          </div>
+        </section>
+
         <!-- The measurement says this control is worth more than everything
              else on the screen, so it sits above the item list, not below. -->
         <section class="weight-block" id="weight-block">

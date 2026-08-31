@@ -915,6 +915,10 @@ function openReview(mode, entry = null) {
   }
 
   $('review-note').hidden = true;
+  $('correct-block').hidden = true;
+  $('correct-form').hidden = true;
+  $('correct-toggle').setAttribute('aria-expanded', 'false');
+  $('correct-text').value = '';
   $('food-q').value = '';
   $('food-results').innerHTML = '';
   $('finder-hint').textContent = state.me?.genericSearch === false
@@ -1007,6 +1011,7 @@ function renderReview() {
   // the grams were entered deliberately, so the control would fight the user.
   const photoBased = hasPhotoItems(est);
   $('weight-block').hidden = !photoBased;
+  $('correct-block').hidden = !(photoBased && state.photo?.base64);
 
   $('weight-out').textContent = `${Math.round(totals.grams)} g`;
   $('review-kcal').textContent = Math.round(totals.calories);
@@ -1278,6 +1283,61 @@ function syncManualToggle() {
   $('manual-toggle').textContent = open ? 'Hide these fields' : 'Type in the numbers instead';
   $('manual-toggle').setAttribute('aria-expanded', String(open));
 }
+
+// ------------------------------------------------------ correcting the AI
+
+$('correct-toggle').addEventListener('click', () => {
+  const form = $('correct-form');
+  form.hidden = !form.hidden;
+  $('correct-toggle').setAttribute('aria-expanded', String(!form.hidden));
+  if (!form.hidden) {
+    track('correct_open');
+    $('correct-text').focus();
+  }
+});
+
+/**
+ * Re-reads the same photograph, having been told what the food actually is.
+ *
+ * The photo is still in memory from the original capture, so this costs one
+ * more model call and no second picture. The correction is kept on the
+ * estimate's note so the entry records why its numbers changed.
+ */
+$('correct-go').addEventListener('click', async () => {
+  const correction = $('correct-text').value.trim();
+  if (!correction) return toast('Say what it is first.');
+  if (!state.photo?.base64) return toast('The photo is no longer available — take another.');
+
+  $('correct-go').disabled = true;
+  setStatus('<span class="spinner"></span>Reading it again…');
+  track('correct_submit', { chars: correction.length });
+  const startedAt = Date.now();
+
+  try {
+    const data = await api('/api/analyse', {
+      method: 'POST',
+      body: JSON.stringify({
+        image: state.photo.base64, mimeType: state.photo.mimeType, correction
+      })
+    });
+    if (!screenIsOpen('review')) return;
+
+    track('correct_ok', { seconds: (Date.now() - startedAt) / 1000, items: data.estimate.items.length });
+    state.estimate = { ...data.estimate, note: `You said: ${correction}` };
+    setStatus('');
+    $('correct-form').hidden = true;
+    $('correct-toggle').setAttribute('aria-expanded', 'false');
+    $('correct-text').value = '';
+    initWeightSlider();
+    renderReview();
+    toast('Read again');
+  } catch (err) {
+    track('correct_fail', { code: err.code || 'unknown' });
+    setStatus(err.message, true);
+  } finally {
+    $('correct-go').disabled = false;
+  }
+});
 
 $('manual-toggle').addEventListener('click', () => {
   const form = $('manual-form');

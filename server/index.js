@@ -265,12 +265,14 @@ app.put('/api/profile', requireDevice, (req, res) => {
 // -------------------------------------------------------------- analysis
 
 app.post('/api/analyse', requireDevice, asyncRoute(async (req, res) => {
-  const { image, mimeType } = req.body || {};
+  const { image, mimeType, correction } = req.body || {};
   if (typeof image !== 'string' || image.length < 100) {
     return res.status(400).json({ error: 'no_image', message: 'No photo was received.' });
   }
 
-  const { raw, usage, model } = await analysePhoto(image, mimeType || 'image/jpeg');
+  const { raw, usage, model } = await analysePhoto(
+    image, mimeType || 'image/jpeg',
+    typeof correction === 'string' ? correction.slice(0, 200) : null);
   const parsed = parseResponse(raw);
 
   if (!parsed.ok) {

@@ -62,6 +62,35 @@ Your weights will be corrected by the person who ate the meal, so give your
 honest best estimate for each one rather than a cautious round number.`;
 
 /**
+ * The prompt, optionally carrying a correction from the person eating.
+ *
+ * A photograph can be read confidently and wrongly: a vegetarian shawarma and
+ * a chicken one look alike, and no amount of portion adjustment fixes a
+ * misidentification. The person at the table knows what they ordered, so their
+ * word is stated as fact rather than as a hint to weigh up -- a model told
+ * "consider that it may be vegetarian" will often keep its own answer.
+ *
+ * The correction is also a reason to start again rather than edit: swapping
+ * chicken for falafel changes the whole nutrition of the dish, not one line of
+ * it.
+ */
+export function buildPrompt(correction) {
+  const note = String(correction || '').trim().slice(0, 200);
+  if (!note) return PROMPT;
+
+  return `${PROMPT}
+
+IMPORTANT — the person eating this has corrected your reading. They said:
+
+  "${note}"
+
+They know what they ordered and you do not. Treat this as fact, not as a
+suggestion, even where it contradicts what the photograph appears to show.
+If it changes what the dish is, work the nutrition out again from the start
+rather than adjusting your previous answer, and name the items accordingly.`;
+}
+
+/**
  * Normalises a raw model response into the shape core/analysis/estimate.js
  * expects, and reports why an empty result is empty.
  *
