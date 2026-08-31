@@ -23,6 +23,7 @@ import { toJson, toCsv } from '../core/export.js';
 import { smoothSeries, weightTrend } from '../core/weight.js';
 import { adaptiveExpenditure } from '../core/expenditure.js';
 import { summariseUsage } from '../core/usage.js';
+import { cleanBatch, summariseEvents } from '../core/events.js';
 import { zip } from './zip.js';
 import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf
@@ -196,6 +197,9 @@ app.get('/api/me', requireDevice, (req, res) => {
     activityLevels: ACTIVITY_LEVELS,
     meals: MEALS,
     analysisConfigured: isConfigured(),
+    // The client collects nothing unless this says so, and the server drops
+    // anything it sends regardless.
+    trackingEnabled: trackingEnabled(req.device.account_id),
     // The UI warns that search covers packaged food only when USDA is absent,
     // rather than letting generic searches quietly return branded noise.
     genericSearch: usdaConfigured()
@@ -612,6 +616,58 @@ app.get('/api/expenditure', requireDevice, (req, res) => {
   res.json(expenditureFor(req.device.account_id));
 });
 
+// ---------------------------------------------------------------- events
+
+const trackingEnabled = (accountId) => Boolean(
+  db.prepare('SELECT tracking_enabled FROM accounts WHERE id = ?').get(accountId)?.tracking_enabled);
+
+/**
+ * Accepts a batch of interaction events, and only from an account that has
+ * been switched on for it.
+ *
+ * The check is here rather than in the client on purpose. A flag the browser
+ * decides is one bug or one shared build away from recording someone who was
+ * told the app tracks nothing; a flag the server enforces cannot be. An
+ * account without it gets 204 and the batch is discarded -- silently, because
+ * a client that keeps trying is not worth an error either.
+ */
+app.post('/api/events', requireDevice, (req, res) => {
+  if (!trackingEnabled(req.device.account_id)) return res.status(204).end();
+
+  const rows = cleanBatch(req.body?.events);
+  if (!rows.length) return res.json({ stored: 0 });
+
+  const insert = db.prepare(
+    'INSERT INTO events (account_id, session, at, name, props_json) VALUES (?, ?, ?, ?, ?)');
+  db.exec('BEGIN');
+  try {
+    for (const r of rows) {
+      insert.run(req.device.account_id, r.session, r.at, r.name,
+        r.props ? JSON.stringify(r.props) : null);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  // Ninety days is longer than any usability question stays interesting.
+  db.prepare("DELETE FROM events WHERE account_id = ? AND at < ?")
+    .run(req.device.account_id, new Date(Date.now() - 90 * 86400000).toISOString());
+
+  res.json({ stored: rows.length });
+});
+
+/** Switching it on is an admin action, so it cannot happen from the phone. */
+app.post('/api/admin/accounts/:id/tracking', requireAdmin, (req, res) => {
+  const on = req.body?.enabled === true || req.body?.enabled === 1;
+  const out = db.prepare('UPDATE accounts SET tracking_enabled = ? WHERE id = ?')
+    .run(on ? 1 : 0, req.params.id);
+  if (!out.changes) return res.status(404).json({ error: 'not_found', detail: 'No such account.' });
+  if (!on) db.prepare('DELETE FROM events WHERE account_id = ?').run(req.params.id);
+  res.json({ ok: true, trackingEnabled: on });
+});
+
 // ----------------------------------------------------------------- usage
 
 /**
@@ -642,7 +698,20 @@ app.get('/api/usage', requireDevice, (req, res) => {
     items: JSON.parse(r.items_json)
   }));
 
-  res.json(summariseUsage({ entries, weights: weightRows(account, days + 1), days }));
+  const derived = summariseUsage({ entries, weights: weightRows(account, days + 1), days });
+
+  // Event data only exists for an account that opted in, so its absence is
+  // reported rather than left as a missing key.
+  if (!trackingEnabled(account)) {
+    return res.json({ ...derived, interaction: { tracking: false } });
+  }
+
+  const events = db.prepare(
+    'SELECT session, at, name, props_json FROM events WHERE account_id = ? AND at >= ? ORDER BY at'
+  ).all(account, new Date(Date.now() - days * 86400000).toISOString())
+    .map((r) => ({ session: r.session, at: r.at, name: r.name, props: r.props_json ? JSON.parse(r.props_json) : null }));
+
+  res.json({ ...derived, interaction: { tracking: true, ...summariseEvents(events) } });
 });
 
 // --------------------------------------------------------------- history

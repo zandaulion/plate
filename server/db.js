@@ -274,6 +274,27 @@ migrateInvites();
 // account model already means a device carries no data of its own.
 addColumnIfMissing('devices', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
 
+// Off for everyone by default, and only ever turned on per account from the
+// private listener. The invitation friends receive says the app tracks
+// nothing; that has to stay true for them no matter what a build does.
+addColumnIfMissing('accounts', 'tracking_enabled', 'INTEGER NOT NULL DEFAULT 0');
+
+db.exec(`
+  -- Interaction events, for usability testing on a consenting account.
+  -- Deliberately small: a name, a few numbers, and never any food photograph
+  -- or nutrition figure -- those are already in entries and do not need a
+  -- second copy here.
+  CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    session    TEXT NOT NULL,
+    at         TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    props_json TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_events_account ON events(account_id, at);
+`);
+
 db.exec(`
   -- Weight readings, one per row. Kept as a series rather than overwriting
   -- profiles.weight_kg, because the trend is what the expenditure estimate

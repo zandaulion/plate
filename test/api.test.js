@@ -1228,3 +1228,117 @@ test('a query that matches nothing returns an empty list, not an error', async (
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).results, []);
 });
+
+// ------------------------------------------------------ interaction events
+
+test('events are refused unless the account has been switched on', async () => {
+  const { auth } = await registerDevice();
+  const send = () => api('/api/events', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ events: [{ name: 'entry_start', at: new Date().toISOString(), session: 's1' }] })
+  });
+
+  // Default is off, and the refusal is silent -- a client that keeps trying
+  // does not deserve an error, it deserves to be ignored.
+  assert.equal((await send()).status, 204);
+
+  const { accountId } = await (await api('/api/me', { headers: auth })).json();
+  await api(`/api/admin/accounts/${accountId}/tracking`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+  });
+
+  const on = await send();
+  assert.equal(on.status, 200);
+  assert.equal((await on.json()).stored, 1);
+});
+
+test('one account being tracked does not track another', async () => {
+  const tracked = await registerDevice();
+  const other = await registerDevice();
+  const { accountId } = await (await api('/api/me', { headers: tracked.auth })).json();
+  await api(`/api/admin/accounts/${accountId}/tracking`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+  });
+
+  const body = JSON.stringify({ events: [{ name: 'day_nav', at: new Date().toISOString(), session: 's' }] });
+  assert.equal((await api('/api/events', { method: 'POST', headers: tracked.auth, body })).status, 200);
+  assert.equal((await api('/api/events', { method: 'POST', headers: other.auth, body })).status, 204,
+    'the friend who was told the app tracks nothing is not tracked');
+
+  const theirs = await (await api('/api/me', { headers: other.auth })).json();
+  assert.equal(theirs.trackingEnabled, false);
+});
+
+test('turning tracking off deletes what was already collected', async () => {
+  const { db } = await import('../server/db.js');
+  const { auth } = await registerDevice();
+  const { accountId } = await (await api('/api/me', { headers: auth })).json();
+  const toggle = (enabled) => api(`/api/admin/accounts/${accountId}/tracking`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled })
+  });
+
+  await toggle(true);
+  await api('/api/events', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ events: [{ name: 'trends_open', at: new Date().toISOString(), session: 's' }] })
+  });
+  assert.ok(db.prepare('SELECT COUNT(*) AS n FROM events WHERE account_id = ?').get(accountId).n > 0);
+
+  await toggle(false);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events WHERE account_id = ?').get(accountId).n, 0,
+    'switching off is not just a flag; the log goes too');
+});
+
+test('usage says plainly when there is no interaction data', async () => {
+  const { auth } = await registerDevice();
+  const u = await (await api('/api/usage', { headers: auth })).json();
+  assert.equal(u.interaction.tracking, false);
+  assert.ok(u.logging, 'the derived half is there regardless');
+});
+
+test('usage reports the funnels once events exist', async () => {
+  const { auth } = await registerDevice();
+  const { accountId } = await (await api('/api/me', { headers: auth })).json();
+  await api(`/api/admin/accounts/${accountId}/tracking`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+  });
+
+  const now = new Date().toISOString();
+  await api('/api/events', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ events: [
+      { name: 'entry_start', at: now, session: 's1' },
+      { name: 'entry_start', at: now, session: 's1' },
+      { name: 'entry_saved', at: now, session: 's1' },
+      { name: 'entry_abandoned', at: now, session: 's1' },
+      { name: 'screen_close', at: now, session: 's1', props: { screen: 'review', seconds: 42 } }
+    ] })
+  });
+
+  const u = await (await api('/api/usage', { headers: auth })).json();
+  assert.equal(u.interaction.tracking, true);
+  assert.equal(u.interaction.completion.started, 2);
+  assert.equal(u.interaction.completion.completedPct, 50);
+  assert.equal(u.interaction.screenSeconds.review, 42);
+});
+
+test('events are scoped to the account, like everything else', async () => {
+  const { db } = await import('../server/db.js');
+  const a = await registerDevice();
+  const b = await registerDevice();
+  for (const who of [a, b]) {
+    const { accountId } = await (await api('/api/me', { headers: who.auth })).json();
+    await api(`/api/admin/accounts/${accountId}/tracking`, {
+      method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+    });
+    await api('/api/events', {
+      method: 'POST', headers: who.auth,
+      body: JSON.stringify({ events: [{ name: 'day_nav', at: new Date().toISOString(), session: 'x' }] })
+    });
+  }
+  const ids = db.prepare('SELECT DISTINCT account_id FROM events').all();
+  assert.ok(ids.length >= 2);
+
+  const ua = await (await api('/api/usage', { headers: a.auth })).json();
+  assert.equal(ua.interaction.events, 1, 'each account sees only its own');
+});

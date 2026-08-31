@@ -11,6 +11,7 @@ import {
 import { toItem, isPlausible } from '/core/foods.js';
 import { macroAgreement } from '/core/nutrition.js';
 import { localDayKey } from '/core/day.js';
+import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
 
 const $ = (id) => document.getElementById(id);
@@ -393,7 +394,10 @@ async function loadDay() {
   renderEntries(data.entries);
 }
 
-$('prev-day').addEventListener('click', () => { state.day = shiftDay(state.day, -1); loadDay(); });
+$('prev-day').addEventListener('click', () => {
+  track('day_nav', { dir: -1 });
+  state.day = shiftDay(state.day, -1); loadDay();
+});
 $('next-day').addEventListener('click', () => {
   const next = shiftDay(state.day, 1);
   // Logging into the future is always a mistake, so the control stops at today.
@@ -408,6 +412,7 @@ $('entries').addEventListener('click', async (ev) => {
   if (deleteId) {
     if (!confirm('Delete this entry?')) return;
     await api(`/api/entries/${encodeURIComponent(deleteId)}`, { method: 'DELETE' });
+    track('entry_deleted');
     toast('Deleted');
     return loadDay();
   }
@@ -616,6 +621,7 @@ $('range-picker').addEventListener('click', (ev) => {
   const range = Number(ev.target.closest('[data-range]')?.dataset.range);
   if (!range) return;
   trendsRange = range;
+  track('trends_range', { days: range });
   document.querySelectorAll('#range-picker [data-range]').forEach((b) =>
     b.setAttribute('aria-pressed', String(Number(b.dataset.range) === range)));
   loadTrends();
@@ -623,8 +629,10 @@ $('range-picker').addEventListener('click', (ev) => {
 
 const closeTrends = () => dismissScreen('trends');
 $('open-trends').addEventListener('click', () => {
+  track('trends_open');
+  const close = screen('trends');
   $('trends').hidden = false;
-  openScreen('trends', () => { $('trends').hidden = true; });
+  openScreen('trends', () => { close(); $('trends').hidden = true; });
   loadTrends();
 });
 $('trends-close').addEventListener('click', closeTrends);
@@ -703,12 +711,19 @@ function renderWeigh(day, weight, expenditure) {
         ${isToday ? `<button class="weigh-dismiss" type="button" id="weigh-skip"
                 aria-label="Not today">&times;</button>` : ''}
       </div>`;
+    track('weigh_prompt_shown', { today: isToday });
     if (isToday) {
-      $('weigh-skip').addEventListener('click', () => { dismiss(day); renderWeigh(day, weight, expenditure); });
+      $('weigh-skip').addEventListener('click', () => {
+        track('weigh_dismissed');
+        dismiss(day); renderWeigh(day, weight, expenditure);
+      });
     }
   }
 
-  $('weigh-open').addEventListener('click', () => openWeighEditor(day, weight));
+  $('weigh-open').addEventListener('click', () => {
+    track('weigh_open', { hadReading: weight?.today !== null && weight?.today !== undefined });
+    openWeighEditor(day, weight);
+  });
 }
 
 /**
@@ -759,6 +774,8 @@ function openWeighEditor(day, weight) {
         method: 'PUT',
         body: JSON.stringify({ day, kg, at: new Date().toISOString() })
       });
+      track('weigh_saved', { backfill: day !== localDayKey() });
+      if (day !== localDayKey()) track('weigh_backfill');
       toast('Weight logged');
       await loadDay();
     } catch (err) {
@@ -818,12 +835,15 @@ $('file-input').addEventListener('change', async (ev) => {
     $('review-photo').src = state.photo.objectUrl;
 
     setStatus('<span class="spinner"></span>Working out what is on the plate…');
+    const analyseAt = Date.now();
+    track('analyse_start');
     const data = await api('/api/analyse', {
       method: 'POST',
       body: JSON.stringify({ image: state.photo.base64, mimeType: state.photo.mimeType })
     });
     if (!screenIsOpen('review')) return;
 
+    track('analyse_ok', { seconds: (Date.now() - analyseAt) / 1000, items: data.estimate.items.length });
     state.estimate = data.estimate;
     state.meal = guessMeal();
     setStatus('');
@@ -831,6 +851,7 @@ $('file-input').addEventListener('change', async (ev) => {
     renderReview();
   } catch (err) {
     if (!screenIsOpen('review')) return;
+    track('analyse_fail', { code: err.code || 'unknown' });
     if (err.code === 'not_food') {
       setStatus(err.note || 'That does not look like food. Try another photo.', true);
     } else if (err.code === 'nothing_found') {
@@ -850,6 +871,9 @@ function guessMeal() {
 }
 
 function setStatus(html, isError = false) {
+  // Anything shown to the person as a failure is worth counting, whatever
+  // produced it.
+  if (isError && html) track('error_shown', { where: 'review' });
   const el = $('review-status');
   el.innerHTML = html;
   el.classList.toggle('err', isError);
@@ -912,6 +936,8 @@ function openReview(mode, entry = null) {
   }
 
   $('review').hidden = false;
+  state.closeReviewScreen = screen('review');
+  track('entry_start', { mode, editing: mode === 'edit' });
   openScreen('review', teardownReview);
   showRecent();
 
@@ -929,6 +955,13 @@ function openReview(mode, entry = null) {
 
 /** Tears the sheet down. Only ever called by the navigation layer. */
 function teardownReview() {
+  if (state.closeReviewScreen) {
+    // Whether the sheet produced an entry is the whole question.
+    state.closeReviewScreen({ items: state.estimate?.items?.length || 0, saved: Boolean(state.savedFromReview) });
+    if (!state.savedFromReview) track('entry_abandoned', { mode: state.mode, items: state.estimate?.items?.length || 0 });
+    state.closeReviewScreen = null;
+  }
+  state.savedFromReview = false;
   if (state.photo?.objectUrl) URL.revokeObjectURL(state.photo.objectUrl);
   state.estimate = null;
   state.photo = null;
@@ -1039,14 +1072,17 @@ $('meal-picker').addEventListener('click', (ev) => {
   renderMealChips();
 });
 
+let sliderTracked = false;
 $('total-weight').addEventListener('input', (ev) => {
   if (!state.estimate) return;
+  if (!sliderTracked) { track('portion_slider'); sliderTracked = true; }
   state.estimate = setTotalGrams(state.estimate, Number(ev.target.value));
   renderReview();
 });
 
 $('weighed').addEventListener('change', (ev) => {
   if (!state.estimate) return;
+  track('portion_weighed_ticked', { on: ev.target.checked });
   state.estimate = markWeighed(state.estimate, ev.target.checked);
   renderReview();
 });
@@ -1065,6 +1101,7 @@ $('review-items').addEventListener('click', (ev) => {
 
   const step = Number(ev.target.closest('[data-step]')?.dataset.step);
   if (!step) return;
+  track('portion_item_step', { step });
   const item = state.estimate.items.find((i) => i.id === id);
   state.estimate = setItemGrams(state.estimate, id, Math.max(0, item.grams + step));
   $('total-weight').value = totalsOf(state.estimate).grams;
@@ -1073,6 +1110,7 @@ $('review-items').addEventListener('click', (ev) => {
 
 $('review-items').addEventListener('change', (ev) => {
   if (ev.target.tagName !== 'INPUT' || !state.estimate) return;
+  track('portion_item_typed');
   const id = ev.target.closest('.item')?.dataset.id;
   state.estimate = setItemGrams(state.estimate, id, Number(ev.target.value));
   $('total-weight').value = totalsOf(state.estimate).grams;
@@ -1142,6 +1180,10 @@ async function runSearch(query) {
   try {
     const data = await api(`/api/foods/search?q=${encodeURIComponent(query)}`);
     if (seq !== searchSeq) return;
+    // Query length rather than the query: what matters is whether searching
+    // worked, not what was eaten.
+    track('search', { chars: query.length, results: data.results.length });
+    if (!data.results.length) track('search_empty', { chars: query.length });
     renderResults(data.results);
     $('finder-hint').textContent = data.results.length
       ? (data.genericSearch ? '' : 'Generic foods may be missing — packaged products search best.')
@@ -1220,8 +1262,10 @@ $('food-results').addEventListener('click', (ev) => {
   const btn = ev.target.closest('[data-i]');
   if (!btn) return;
   const results = JSON.parse($('food-results').dataset.payload || '[]');
-  const food = results[Number(btn.dataset.i)];
-  if (food) addFood(food);
+  const idx = Number(btn.dataset.i);
+  const food = results[idx];
+  // Which rank got picked says whether the ranking is any good.
+  if (food) { track('search_pick', { rank: idx + 1, source: food.source }); addFood(food); }
 });
 
 // ---------------------------------------------------------- typed panel
@@ -1238,6 +1282,7 @@ function syncManualToggle() {
 $('manual-toggle').addEventListener('click', () => {
   const form = $('manual-form');
   form.hidden = !form.hidden;
+  if (!form.hidden) track('manual_open');
   syncManualToggle();
   if (!form.hidden) {
     // Carry over whatever was being searched for, so switching to typing it
@@ -1315,6 +1360,7 @@ function checkManual() {
     const implied = Math.round(
       (parsed.per100.protein * 4 + parsed.per100.carbs * 4 + parsed.per100.fat * 9)
       * parsed.grams / 100);
+    track('manual_warned', { gap: Math.round(disagreement * 100) });
     warn.textContent = `The macros add up to about ${implied} kcal, not `
       + `${Math.round(parsed.per100.calories * parsed.grams / 100)}. Printed panels are often out — `
       + 'worth a second look. The calories you entered are what will be used.';
@@ -1346,6 +1392,7 @@ $('m-add').addEventListener('click', () => {
   $('food-results').innerHTML = '';
 
   renderReview();
+  track('manual_add');
   toast(`Added ${parsed.name}`);
 });
 
@@ -1366,7 +1413,9 @@ async function lookupBarcode(code) {
  * but never leaves the user stuck.
  */
 async function startScan() {
+  track('scan_start');
   if (!('BarcodeDetector' in window)) {
+    track('scan_typed', { reason: 'no_detector' });
     const typed = prompt('Type the barcode number:');
     if (typed) lookupBarcode(typed.trim());
     return;
@@ -1378,6 +1427,7 @@ async function startScan() {
       video: { facingMode: 'environment' }
     });
   } catch {
+    track('scan_typed', { reason: 'no_camera' });
     const typed = prompt('No camera access. Type the barcode number:');
     if (typed) lookupBarcode(typed.trim());
     return;
@@ -1417,8 +1467,10 @@ async function startScan() {
   // while a phone camera warms up -- where the viewfinder is covering the app
   // but the back gesture would close the sheet underneath it and leave the
   // camera running.
+  const scanAt = Date.now();
+  const closeScanScreen = screen('scanner');
   document.body.appendChild(wrap);
-  openScreen('scanner', teardown);
+  openScreen('scanner', () => { closeScanScreen(); teardown(); });
 
   try {
     await video.play();
@@ -1432,7 +1484,10 @@ async function startScan() {
   });
 
   const stop = () => dismissScreen('scanner');
-  wrap.querySelector('.scan-cancel').addEventListener('click', stop);
+  wrap.querySelector('.scan-cancel').addEventListener('click', () => {
+    track('scan_cancel', { seconds: (Date.now() - scanAt) / 1000 });
+    stop();
+  });
 
   // Say something before giving up. Twenty seconds of an unchanging camera
   // with no feedback reads as a broken app rather than a difficult barcode.
@@ -1447,6 +1502,7 @@ async function startScan() {
     if (!wrap.isConnected) { clearTimeout(nudge); return; }
     if (Date.now() > deadline) {
       clearTimeout(nudge);
+      track('scan_fail', { seconds: (Date.now() - scanAt) / 1000 });
       stop();
       $('finder-hint').textContent =
         'No barcode found. Try again, or use the barcode button here to type the number.';
@@ -1457,6 +1513,7 @@ async function startScan() {
       if (found.length) {
         const code = found[0].rawValue;
         clearTimeout(nudge);
+        track('scan_ok', { seconds: (Date.now() - scanAt) / 1000 });
         // Confirm the hit before the camera disappears, so a successful scan
         // does not just look like the screen closing on its own.
         wrap.classList.add('hit');
@@ -1504,6 +1561,9 @@ $('save-entry').addEventListener('click', async () => {
         })
       });
     }
+    state.savedFromReview = true;
+    track(state.mode === 'edit' ? 'entry_edited' : 'entry_saved',
+      { mode: state.mode, items: state.estimate.items.length, portion: portionSourceOf(state.estimate) });
     closeReview();
     toast(state.mode === 'edit' ? 'Updated' : 'Logged');
     await loadDay();
@@ -1559,8 +1619,9 @@ const closeSettings = () => dismissScreen('settings');
 $('open-profile').addEventListener('click', () => {
   fillProfile();
   loadWeight();
+  const close = screen('you');
   $('profile').hidden = false;
-  openScreen('profile', () => { $('profile').hidden = true; });
+  openScreen('profile', () => { close(); $('profile').hidden = true; });
 });
 $('profile-close').addEventListener('click', closeProfile);
 $('profile').addEventListener('click', (ev) => { if (ev.target === $('profile')) closeProfile(); });
@@ -1570,8 +1631,9 @@ $('open-settings').addEventListener('click', () => {
   loadDevices();
   renderRecoveryState();
   $('code-box').hidden = true;
+  const close = screen('settings');
   $('settings').hidden = false;
-  openScreen('settings', () => { $('settings').hidden = true; });
+  openScreen('settings', () => { close(); $('settings').hidden = true; });
 });
 $('settings-close').addEventListener('click', closeSettings);
 $('settings').addEventListener('click', (ev) => { if (ev.target === $('settings')) closeSettings(); });
@@ -1836,6 +1898,8 @@ $('logout').addEventListener('click', async () => {
 
 async function start() {
   state.me = await api('/api/me');
+  // The server decides. Nothing is collected until it says so.
+  startTracking(state.me.trackingEnabled);
   if (!state.me.analysisConfigured) toast('Photo analysis is not configured on this server.');
   await loadDay();
 }
