@@ -14,7 +14,10 @@ import {
   ThrottledError
 } from './auth.js';
 import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
-import { lookupBarcode, searchFoods, LookupError, usdaConfigured } from './foods.js';
+import {
+  lookupBarcode, searchFoods, LookupError, usdaConfigured,
+  productImagePath, hasProductImage
+} from './foods.js';
 import { summariseRecent } from '../core/foods.js';
 import { toJson, toCsv } from '../core/export.js';
 import { smoothSeries, weightTrend } from '../core/weight.js';
@@ -320,6 +323,20 @@ app.get('/api/foods/recent', requireDevice, (req, res) => {
   res.json({ recent: summariseRecent(parsed) });
 });
 
+/**
+ * The cached product shot for a barcode.
+ *
+ * Served from here rather than linked upstream: the browser asking Open Food
+ * Facts for the picture would tell them the reader's address and what they are
+ * about to eat, which proxying the lookup exists to avoid.
+ */
+app.get('/api/foods/image/:barcode', requireDevice, (req, res) => {
+  if (!hasProductImage(req.params.barcode)) return res.status(404).end();
+  res.type('image/jpeg');
+  res.setHeader('Cache-Control', 'private, max-age=604800');
+  fs.createReadStream(productImagePath(req.params.barcode)).pipe(res);
+});
+
 app.get('/api/foods/search', requireDevice, asyncRoute(async (req, res) => {
   res.json({
     results: await searchFoods(req.query.q),
@@ -353,7 +370,11 @@ app.post('/api/entries', requireDevice, (req, res) => {
   const totals = totalsOf(estimate);
 
   const id = crypto.randomUUID();
-  const photoId = savePhoto(b.image, b.mimeType);
+  // A camera photo always wins. Failing that, a scanned product's own picture
+  // stands in, so a barcode entry looks like the others in the log instead of
+  // being the one row with an empty square.
+  let photoId = savePhoto(b.image, b.mimeType);
+  if (!photoId) photoId = adoptProductImage(items);
 
   db.prepare(`
     INSERT INTO entries (id, account_id, device_id, day, meal, created_at, photo_id, note,
@@ -370,6 +391,25 @@ app.post('/api/entries', requireDevice, (req, res) => {
 
   res.status(201).json({ id, day, totals, photoId });
 });
+
+/**
+ * Copies a cached product shot into this entry's own photo.
+ *
+ * Copied rather than referenced, so deleting or exporting an entry behaves
+ * exactly as it does for a photograph -- a shared file would be unlinked out
+ * from under every other entry that used the same product.
+ */
+function adoptProductImage(items) {
+  const withCode = (items || []).find((i) => i?.barcode && hasProductImage(i.barcode));
+  if (!withCode) return null;
+  try {
+    const name = `${crypto.randomUUID()}.jpg`;
+    fs.copyFileSync(productImagePath(withCode.barcode), path.join(PHOTO_DIR, name));
+    return name;
+  } catch {
+    return null;
+  }
+}
 
 function rowToEntry(row) {
   return {

@@ -1040,3 +1040,104 @@ test('the profile reports which weight its estimate used', async () => {
   assert.equal(me.maintenance.kcal, Math.round((10 * 83 + 6.25 * 179 - 5 * 46 + 5) * 1.2),
     'and the figure agrees with what it says it used');
 });
+
+// -------------------------------------------------------- product images
+
+test('a scanned product without a cached image is still saveable', async () => {
+  const { auth } = await registerDevice();
+  const created = await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-07-01',
+      items: [{ name: 'Yoghurt', grams: 150, barcode: '0000000000000',
+                per: { calories: 0.6, protein: 0.05, fat: 0.02, carbs: 0.07 } }]
+    })
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await created.json()).photoId, null, 'no picture, and that is fine');
+});
+
+test('a barcode entry adopts the cached product shot as its own photo', async () => {
+  const { auth } = await registerDevice();
+  const { PRODUCT_DIR } = await import('../server/db.js');
+  const barcode = '1234567890123';
+  // Stand in for what lookupBarcode would have fetched.
+  fs.writeFileSync(path.join(PRODUCT_DIR, `${barcode}.jpg`), Buffer.alloc(600, 0xAB));
+
+  const created = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-07-02',
+      items: [{ name: 'Nutella', grams: 30, barcode,
+                per: { calories: 5.39, protein: 0.063, fat: 0.309, carbs: 0.575 } }]
+    })
+  })).json();
+
+  assert.ok(created.photoId, 'the entry gets a picture');
+  const day = await (await api('/api/entries?day=2026-07-02', { headers: auth })).json();
+  assert.equal(day.entries[0].photoId, created.photoId);
+
+  // Served through the ordinary authenticated photo route, like any other.
+  assert.equal((await api(`/api/photo/${created.photoId}`, { headers: auth })).status, 200);
+});
+
+test('the copy is the entry’s own, so deleting it leaves the product image alone', async () => {
+  const { auth } = await registerDevice();
+  const { PRODUCT_DIR } = await import('../server/db.js');
+  const barcode = '4444444444444';
+  const source = path.join(PRODUCT_DIR, `${barcode}.jpg`);
+  fs.writeFileSync(source, Buffer.alloc(600, 0xCD));
+
+  const item = { name: 'Thing', grams: 50, barcode, per: { calories: 2, protein: 0, fat: 0, carbs: 0 } };
+  const a = await (await api('/api/entries', { method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-07-03', items: [item] }) })).json();
+  const b = await (await api('/api/entries', { method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-07-04', items: [item] }) })).json();
+
+  assert.notEqual(a.photoId, b.photoId, 'each entry gets its own copy, not a shared file');
+
+  await api(`/api/entries/${a.id}`, { method: 'DELETE', headers: auth });
+  assert.ok(fs.existsSync(source), 'the cached product image survives');
+  assert.equal((await api(`/api/photo/${b.photoId}`, { headers: auth })).status, 200,
+    'and the other entry still has its picture');
+});
+
+test('a camera photo always beats the product shot', async () => {
+  const { auth } = await registerDevice();
+  const { PRODUCT_DIR } = await import('../server/db.js');
+  const barcode = '5555555555555';
+  fs.writeFileSync(path.join(PRODUCT_DIR, `${barcode}.jpg`), Buffer.alloc(600, 0x01));
+
+  const created = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-07-05', image: Buffer.alloc(400, 0x89).toString('base64'), mimeType: 'image/jpeg',
+      items: [{ name: 'Thing', grams: 50, barcode, per: { calories: 2, protein: 0, fat: 0, carbs: 0 } }]
+    })
+  })).json();
+
+  assert.ok(created.photoId.endsWith('.jpg'));
+  const bytes = fs.readFileSync(path.join(process.env.DATA_DIR, 'photos', created.photoId));
+  assert.equal(bytes.length, 400, 'the uploaded photo was kept, not the product shot');
+});
+
+test('the product image route needs auth and 404s for an unknown barcode', async () => {
+  const { auth } = await registerDevice();
+  assert.equal((await api('/api/foods/image/1234567890123')).status, 401);
+  assert.equal((await api('/api/foods/image/9999999999999', { headers: auth })).status, 404);
+});
+
+test('recents carry the barcode, so a repeat scan keeps its picture', async () => {
+  const { auth } = await registerDevice();
+  const barcode = '7777777777777';
+  await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: new Date().toISOString().slice(0, 10),
+      items: [{ name: 'Oat drink', grams: 200, barcode,
+                per: { calories: 0.45, protein: 0.01, fat: 0.015, carbs: 0.066 } }]
+    })
+  });
+  const { recent } = await (await api('/api/foods/recent', { headers: auth })).json();
+  assert.equal(recent.find((f) => f.name === 'Oat drink').barcode, barcode);
+});

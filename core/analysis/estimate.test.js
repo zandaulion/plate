@@ -189,3 +189,29 @@ test('hasPhotoItems distinguishes the two kinds of estimate', () => {
   assert.equal(hasPhotoItems(manual), false);
   assert.equal(hasPhotoItems({ items: [] }), false);
 });
+
+test('a database-only meal is never widened, whatever its portion source', () => {
+  // The badge in the log follows the same rule this does: uncertainty about
+  // the weight only matters where the weight drives the numbers.
+  const scanned = addManualItem({ items: [], portionSource: 'model' }, {
+    name: 'Nutella', grams: 100, barcode: '3017624010701',
+    per100: { calories: 539, protein: 6.3, fat: 30.9, carbs: 57.5 }
+  });
+  const r = rangesOf(scanned);
+  assert.equal(r.calories.low, r.calories.high, 'no band at all');
+  assert.equal(r.calories.confidence, 'exact');
+  assert.equal(hasPhotoItems(scanned), false);
+});
+
+test('a scanned item keeps its barcode', () => {
+  const e = addManualItem({ items: [] }, {
+    name: 'Nutella', grams: 30, barcode: '3017624010701',
+    per100: { calories: 539, protein: 6.3, fat: 30.9, carbs: 57.5 }
+  });
+  assert.equal(e.items[0].barcode, '3017624010701');
+
+  const typed = addManualItem({ items: [] }, {
+    name: 'Soup', grams: 300, per100: { calories: 40, protein: 2, fat: 1, carbs: 5 }
+  });
+  assert.ok(!('barcode' in typed.items[0]), 'and one without a code carries none');
+});

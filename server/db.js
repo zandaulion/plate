@@ -8,7 +8,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 export const PHOTO_DIR = path.join(DATA_DIR, 'photos');
-for (const dir of [DATA_DIR, PHOTO_DIR]) {
+// Product shots fetched from Open Food Facts, keyed by barcode and shared
+// between accounts. Kept apart from photos/, which holds people's own
+// pictures and is theirs to delete.
+export const PRODUCT_DIR = path.join(DATA_DIR, 'products');
+for (const dir of [DATA_DIR, PHOTO_DIR, PRODUCT_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 

@@ -249,14 +249,19 @@ export function removeItem(estimate, itemId) {
  * Add a food by hand. Rates are given per 100 g, which is how nutrition labels
  * and food databases express them.
  */
-export function addManualItem(estimate, { name, grams, per100 }) {
+export function addManualItem(estimate, { name, grams, per100, barcode = null }) {
   const g = Number(grams);
   if (!name || !Number.isFinite(g) || g <= 0) return estimate;
   const per = {};
   for (const n of NUTRIENTS) per[n] = (Number(per100?.[n]) || 0) / 100;
   return {
     ...estimate,
-    items: [...(estimate.items || []), { id: nextId(), name: String(name).trim(), grams: round(g, 0), per, source: 'manual' }]
+    items: [...(estimate.items || []), {
+      id: nextId(), name: String(name).trim(), grams: round(g, 0), per,
+      source: 'manual',
+      // Carried so a scanned product can be shown with its picture later.
+      ...(barcode ? { barcode: String(barcode) } : {})
+    }]
   };
 }
 

@@ -5,11 +5,51 @@
 // Open Food Facts asks for an identifying User-Agent, the USDA key must not
 // reach the client, and proxying lets barcode hits be cached.
 
-import { db, nowIso } from './db.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { db, nowIso, PRODUCT_DIR } from './db.js';
 import { fromOpenFoodFacts, fromUsda, rankResults } from '../core/foods.js';
 
 const UA = 'Plate/0.1 (self-hosted personal food log)';
-const OFF_FIELDS = 'code,product_name,brands,quantity,serving_size,nutriments';
+const OFF_FIELDS = 'code,product_name,brands,quantity,serving_size,nutriments,'
+  + 'image_front_small_url,image_small_url';
+
+/** Bounded on purpose: this is a thumbnail, and the URL comes from a third party. */
+const MAX_IMAGE_BYTES = 512 * 1024;
+
+export const productImagePath = (barcode) =>
+  path.join(PRODUCT_DIR, `${String(barcode).replace(/\D/g, '')}.jpg`);
+
+export const hasProductImage = (barcode) => {
+  if (!barcode) return false;
+  try { return fs.statSync(productImagePath(barcode)).size > 0; } catch { return false; }
+};
+
+/**
+ * Fetches a product shot once and keeps it, keyed by barcode.
+ *
+ * Never fatal: a missing picture is a missing picture, and an entry without
+ * one is still a perfectly good entry. Failures are swallowed so a slow image
+ * host cannot turn a working barcode scan into an error.
+ */
+async function cacheProductImage(barcode, url) {
+  if (!url || !barcode || hasProductImage(barcode)) return;
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) return;
+    if (!/^image\//.test(res.headers.get('content-type') || '')) return;
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_IMAGE_BYTES) return;
+    fs.writeFileSync(productImagePath(barcode), buf);
+  } catch {
+    // Deliberately silent.
+  }
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS food_cache (
@@ -51,7 +91,8 @@ function cachedBarcode(code) {
   if (!row) return null;
   return {
     id: row.id, source: row.source, barcode: row.barcode, name: row.name,
-    per100: JSON.parse(row.per100_json), servingG: row.serving_g, cached: true
+    per100: JSON.parse(row.per100_json), servingG: row.serving_g, cached: true,
+    hasImage: hasProductImage(row.barcode)
   };
 }
 
@@ -91,6 +132,7 @@ export async function lookupBarcode(rawCode) {
   }
 
   const food = fromOpenFoodFacts({ ...json.product, code });
+  if (food?.imageUrl) await cacheProductImage(code, food.imageUrl);
   if (!food) {
     // The product exists but carries no usable nutrition. Saying so is more
     // useful than "not found", because the remedy is different: enter it by
@@ -98,7 +140,7 @@ export async function lookupBarcode(rawCode) {
     throw new LookupError('no_nutrition',
       'That product is listed but has no nutrition information. Add it by hand.', 422);
   }
-  return cache(food);
+  return { ...cache(food), hasImage: hasProductImage(code) };
 }
 
 async function searchOpenFoodFacts(query) {

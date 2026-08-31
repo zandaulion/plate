@@ -332,6 +332,22 @@ function renderSplit(split) {
     `Protein ${split.protein}%, carbohydrate ${split.carbs}%, fat ${split.fat}% of calories`);
 }
 
+/**
+ * Portion source is only worth flagging when it changes the numbers.
+ *
+ * It does that for a photograph, where the weight is the dominant error. It
+ * does not for a scanned barcode or a typed panel: the nutrition there is
+ * exact and rangesOf already declines to widen it, so labelling such an entry
+ * "weight not set" reports a doubt the app does not actually have.
+ */
+function badgeFor(entry) {
+  const fromPhoto = (entry.items || []).some((i) => i.source === 'photo');
+  if (!fromPhoto) return '';
+  if (entry.portionSource === 'weighed') return '<span class="badge-est badge-weighed">weighed</span>';
+  if (entry.portionSource === 'estimated') return '';
+  return '<span class="badge-est">weight not set</span>';
+}
+
 function renderEntries(entries) {
   const list = $('entries');
   // Kept so a tap can reopen the entry in the editor without another request.
@@ -352,10 +368,7 @@ function renderEntries(entries) {
         <div class="entry-foods">${esc(foods) || 'Meal'}</div>
         <div class="entry-meta">
           <span>${e.meal ? esc(e.meal) : time}</span>
-          ${e.portionSource === 'weighed'
-            ? '<span class="badge-est badge-weighed">weighed</span>'
-            : e.portionSource === 'estimated' ? ''
-            : '<span class="badge-est">weight not set</span>'}
+          ${badgeFor(e)}
         </div>
       </div>
       <div>
@@ -1110,6 +1123,8 @@ async function showRecent() {
       // Recents carry per-gram rates already, and the weight last used.
       per: f.per,
       grams: f.grams,
+      barcode: f.barcode || null,
+      hasImage: Boolean(f.barcode),
       uses: f.uses
     })));
     $('finder-hint').textContent = 'Recently logged — tap to add again.';
@@ -1165,6 +1180,12 @@ $('food-q').addEventListener('focus', () => {
 function addFood(food) {
   const base = state.estimate || { items: [], portionSource: 'model', note: '' };
 
+  if (food.barcode && food.hasImage) {
+    const photoEl = $('review-photo');
+    photoEl.src = `/api/foods/image/${encodeURIComponent(food.barcode)}`;
+    photoEl.hidden = false;
+  }
+
   if (food.source === 'recent') {
     // Already per-gram, at the weight last used, so it is added directly
     // rather than round-tripped through the per-100 g form.
@@ -1172,7 +1193,8 @@ function addFood(food) {
       ...base,
       items: [...base.items, {
         id: `re${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-        name: food.name, grams: food.grams, per: food.per, source: 'manual'
+        name: food.name, grams: food.grams, per: food.per, source: 'manual',
+        ...(food.barcode ? { barcode: food.barcode } : {})
       }]
     };
   } else {

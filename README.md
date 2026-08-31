@@ -188,7 +188,16 @@ require photographing it.
 
 * **Barcode** — Open Food Facts, looked up by scanning with the browser's
   `BarcodeDetector` or by typing the number. Exact, free, and cached, so the
-  yoghurt you scan every morning costs one network call ever.
+  yoghurt you scan every morning costs one network call ever. The product photo
+  is fetched too, so a scanned entry looks like a photographed one in the log
+  rather than being the row with an empty square.
+
+  **The server fetches that picture, never the browser.** Loading it from
+  Open Food Facts directly would hand them the reader's address and a list of
+  what they eat, which proxying the lookups exists to prevent. The image is
+  cached once per barcode, then *copied* into each entry that uses it — shared
+  files would be unlinked out from under other entries on the first delete, and
+  copies keep deletion and export behaving exactly as they do for a photograph.
 * **Search** — USDA FoodData Central for generic whole foods, Open Food Facts
   for packaged ones, merged and re-ranked. Open Food Facts alone is a poor
   generic index: searching *banana* there returns banana yoghurt and banana

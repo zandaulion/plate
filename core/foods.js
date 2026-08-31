@@ -100,7 +100,12 @@ export function fromOpenFoodFacts(product) {
     barcode: product.code ? String(product.code) : null,
     name,
     per100,
-    servingG: parseServing(product.serving_size)
+    servingG: parseServing(product.serving_size),
+    // Where the product photo lives upstream. Only the server ever follows it:
+    // fetching it from the browser would hand Open Food Facts the user's
+    // address and a list of what they eat, which proxying the lookups exists
+    // to prevent.
+    imageUrl: product.image_front_small_url || product.image_small_url || null
   };
 }
 
@@ -183,11 +188,16 @@ export function rankResults(results, query) {
   return [...results].sort((a, b) => score(b) - score(a));
 }
 
-/** A search hit at a chosen weight, ready for estimate.addManualItem. */
+/**
+ * A search hit at a chosen weight, ready for estimate.addManualItem.
+ *
+ * The barcode travels with the item so the server can find the product shot it
+ * already cached, without the client ever handling an upstream image URL.
+ */
 export function toItem(food, grams) {
   const g = Number(grams);
   if (!food || !Number.isFinite(g) || g <= 0) return null;
-  return { name: food.name, grams: g, per100: food.per100 };
+  return { name: food.name, grams: g, per100: food.per100, barcode: food.barcode || null };
 }
 
 /**
@@ -224,6 +234,7 @@ export function summariseRecent(rows, { now = Date.now(), limit = 12 } = {}) {
         // starting point than an older one.
         per: item.per || null,
         grams: Math.round(grams),
+        barcode: item.barcode || null,
         uses: 1,
         lastUsed: Number.isFinite(loggedAt) ? loggedAt : 0
       });
@@ -235,6 +246,7 @@ export function summariseRecent(rows, { now = Date.now(), limit = 12 } = {}) {
       existing.lastUsed = loggedAt;
       existing.per = item.per || existing.per;
       existing.grams = Math.round(grams);
+      existing.barcode = item.barcode || existing.barcode;
     }
   }
 
