@@ -339,8 +339,35 @@ export function requireDevice(req, res, next) {
  * environment-variable bypass -- that is one stray variable away from an open
  * admin API.
  */
+/**
+ * Admin access, proved by a shared secret rather than asserted by a header.
+ *
+ * This used to be `X-Admin: 1` -- a constant any caller could set. It was not
+ * reachable from outside, because the public listener strips it and the
+ * listener that injects it is bound to the tailnet, but that made the whole
+ * admin surface rest on two lines of proxy configuration with nothing behind
+ * them. Anything that reached the port directly was admin.
+ *
+ * Now the proxy passes a secret this process also knows, so being on the right
+ * listener is no longer the same thing as being trusted.
+ *
+ * Fails closed. If ADMIN_TOKEN is missing the answer is no, because the
+ * alternative -- treating an unconfigured server as an open one -- is exactly
+ * how this kind of gate quietly stops working.
+ */
+function adminTokenOk(supplied) {
+  const expected = (process.env.ADMIN_TOKEN || '').trim();
+  if (!expected) return false;
+  const given = Buffer.from(String(supplied || ''));
+  const want = Buffer.from(expected);
+  // timingSafeEqual demands equal lengths, so compare those first. It leaks
+  // the length of the secret and nothing else.
+  if (given.length !== want.length) return false;
+  return crypto.timingSafeEqual(given, want);
+}
+
 export function requireAdmin(req, res, next) {
-  if (req.headers['x-admin'] !== '1') {
+  if (!adminTokenOk(req.headers['x-admin-token'])) {
     return res.status(403).json({ error: 'admin_only', message: 'Available on the private listener only.' });
   }
   next();

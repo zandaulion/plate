@@ -4,6 +4,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+
+// The admin gate wants a shared secret now, not a header anyone can set. The
+// suite sets one for itself so the tests go through the same door the invite
+// console does, rather than around it.
+process.env.ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'test-admin-token';
+const ADMIN_HEADERS = { 'X-Admin-Token': process.env.ADMIN_TOKEN };
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -62,7 +68,7 @@ test('admin routes are unreachable without the private-listener header', async (
   assert.equal((await api('/api/admin/invites')).status, 403);
   assert.equal((await api('/api/admin/invites', { method: 'POST', body: '{}' })).status, 403);
 
-  const ok = await api('/api/admin/invites', { headers: { 'X-Admin': '1' } });
+  const ok = await api('/api/admin/invites', { headers: ADMIN_HEADERS });
   assert.equal(ok.status, 200);
 });
 
@@ -503,7 +509,7 @@ test('deleting an account removes its devices, entries and profile', async () =>
   // Devices reference the account with no ON DELETE action, so this used to
   // fail the foreign key and return 500.
   const res = await api(`/api/admin/accounts/${accountId}`, {
-    method: 'DELETE', headers: { 'X-Admin': '1' }
+    method: 'DELETE', headers: ADMIN_HEADERS
   });
   assert.equal(res.status, 200);
 
@@ -516,7 +522,7 @@ test('deleting an account removes its devices, entries and profile', async () =>
 
 test('deleting an unknown account is a 404, not a 500', async () => {
   const res = await api('/api/admin/accounts/does-not-exist', {
-    method: 'DELETE', headers: { 'X-Admin': '1' }
+    method: 'DELETE', headers: ADMIN_HEADERS
   });
   assert.equal(res.status, 404);
 });
@@ -745,7 +751,7 @@ test('a created invite carries what the console needs to send it', async () => {
 
 test('the invite listing exposes the plaintext only while it can still be used', async () => {
   const inv = createInvite('pending');
-  let listed = (await (await api('/api/admin/invites', { headers: { 'X-Admin': '1' } })).json());
+  let listed = (await (await api('/api/admin/invites', { headers: ADMIN_HEADERS })).json());
   assert.equal(listed.ttl_days, 7);
 
   let row = listed.invites.find((i) => i.id === inv.id);
@@ -754,7 +760,7 @@ test('the invite listing exposes the plaintext only while it can still be used',
 
   await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code: inv.code }) });
 
-  listed = await (await api('/api/admin/invites', { headers: { 'X-Admin': '1' } })).json();
+  listed = await (await api('/api/admin/invites', { headers: ADMIN_HEADERS })).json();
   row = listed.invites.find((i) => i.id === inv.id);
   assert.ok(row.used_at, 'now marked used');
   assert.equal(row.code, null, 'and the plaintext is gone from the response');
@@ -775,7 +781,7 @@ test('a spent invite leaves no plaintext in the database either', async () => {
 test('an invite can be cancelled before use, and then refuses to register', async () => {
   const inv = createInvite('cancel me');
   assert.equal((await api(`/api/admin/invites/${inv.id}/revoke`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: '{}'
+    method: 'POST', headers: ADMIN_HEADERS, body: '{}'
   })).status, 200);
 
   assert.equal((await api('/api/auth/redeem', {
@@ -788,7 +794,7 @@ test('a used invite cannot be cancelled, and says why', async () => {
   await api('/api/auth/redeem', { method: 'POST', body: JSON.stringify({ code: inv.code }) });
 
   const res = await api(`/api/admin/invites/${inv.id}/revoke`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: '{}'
+    method: 'POST', headers: ADMIN_HEADERS, body: '{}'
   });
   assert.equal(res.status, 404);
   assert.ok((await res.json()).detail, 'the console shows detail on failure');
@@ -807,47 +813,47 @@ test('an expired invite refuses to register', async () => {
 
 test('revoking a device locks it out and can be undone', async () => {
   const { auth } = await registerDevice();
-  const { devices } = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const { devices } = await (await api('/api/admin/devices', { headers: ADMIN_HEADERS })).json();
   const me = devices[0];
   assert.equal(me.revoked, false);
 
   await api(`/api/admin/devices/${me.id}/revoke`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ revoked: true })
   });
   assert.equal((await api('/api/me', { headers: auth })).status, 401, 'revoked devices cannot authenticate');
 
   // Reversible, which a delete would not have been.
   await api(`/api/admin/devices/${me.id}/revoke`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: false })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ revoked: false })
   });
   assert.equal((await api('/api/me', { headers: auth })).status, 200, 'restore brings it back');
 });
 
 test('a device can be renamed from the console', async () => {
   await registerDevice();
-  const { devices } = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const { devices } = await (await api('/api/admin/devices', { headers: ADMIN_HEADERS })).json();
   const id = devices[0].id;
 
   assert.equal((await api(`/api/admin/devices/${id}/label`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ label: "Ana's phone" })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ label: "Ana's phone" })
   })).status, 200);
 
-  const after = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const after = await (await api('/api/admin/devices', { headers: ADMIN_HEADERS })).json();
   assert.equal(after.devices.find((d) => d.id === id).label, "Ana's phone");
 
   assert.equal((await api(`/api/admin/devices/${id}/label`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ label: '' })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ label: '' })
   })).status, 400);
 });
 
 test('a revoked device is hidden from the account that owns it', async () => {
   const { auth } = await registerDevice();
   const second = await linkNewDevice(auth, 'spare');
-  const all = await (await api('/api/admin/devices', { headers: { 'X-Admin': '1' } })).json();
+  const all = await (await api('/api/admin/devices', { headers: ADMIN_HEADERS })).json();
   const spare = all.devices.find((d) => d.label === 'spare');
 
   await api(`/api/admin/devices/${spare.id}/revoke`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ revoked: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ revoked: true })
   });
 
   const mine = await (await api('/api/devices', { headers: auth })).json();
@@ -1257,7 +1263,7 @@ test('events are refused unless the account has been switched on', async () => {
 
   const { accountId } = await (await api('/api/me', { headers: auth })).json();
   await api(`/api/admin/accounts/${accountId}/tracking`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled: true })
   });
 
   const on = await send();
@@ -1270,7 +1276,7 @@ test('one account being tracked does not track another', async () => {
   const other = await registerDevice();
   const { accountId } = await (await api('/api/me', { headers: tracked.auth })).json();
   await api(`/api/admin/accounts/${accountId}/tracking`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled: true })
   });
 
   const body = JSON.stringify({ events: [{ name: 'day_nav', at: new Date().toISOString(), session: 's' }] });
@@ -1287,7 +1293,7 @@ test('turning tracking off deletes what was already collected', async () => {
   const { auth } = await registerDevice();
   const { accountId } = await (await api('/api/me', { headers: auth })).json();
   const toggle = (enabled) => api(`/api/admin/accounts/${accountId}/tracking`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled })
   });
 
   await toggle(true);
@@ -1313,7 +1319,7 @@ test('usage reports the funnels once events exist', async () => {
   const { auth } = await registerDevice();
   const { accountId } = await (await api('/api/me', { headers: auth })).json();
   await api(`/api/admin/accounts/${accountId}/tracking`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled: true })
   });
 
   const now = new Date().toISOString();
@@ -1342,7 +1348,7 @@ test('events are scoped to the account, like everything else', async () => {
   for (const who of [a, b]) {
     const { accountId } = await (await api('/api/me', { headers: who.auth })).json();
     await api(`/api/admin/accounts/${accountId}/tracking`, {
-      method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+      method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled: true })
     });
     await api('/api/events', {
       method: 'POST', headers: who.auth,
@@ -1600,7 +1606,7 @@ test('quick bite and grazing events validate and record in event stream', async 
 
   // Enable tracking
   await api(`/api/admin/accounts/${accountId}/tracking`, {
-    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+    method: 'POST', headers: ADMIN_HEADERS, body: JSON.stringify({ enabled: true })
   });
 
   const res = await api('/api/events', {
@@ -1628,4 +1634,33 @@ test('/bust endpoint returns no-cache headers and clear-site-data', async () => 
   const html = await res.text();
   assert.ok(html.includes('Updating Plate'));
   assert.ok(html.includes('caches.delete'));
+});
+
+// ------------------------------------------------------- the admin gate
+
+test('the admin gate wants the secret, not a header anyone can set', async () => {
+  // This is the whole point of the change: `X-Admin: 1` was a constant, so
+  // anything that reached the port was admin. Being on the right listener is
+  // no longer the same as being trusted.
+  const forged = await api('/api/admin/invites', { headers: { 'X-Admin': '1' } });
+  assert.equal(forged.status, 403, 'the old flag opens nothing');
+
+  const wrong = await api('/api/admin/invites', { headers: { 'X-Admin-Token': 'not-the-secret' } });
+  assert.equal(wrong.status, 403);
+
+  const bare = await api('/api/admin/invites');
+  assert.equal(bare.status, 403);
+
+  const right = await api('/api/admin/invites', { headers: ADMIN_HEADERS });
+  assert.equal(right.status, 200, 'and the secret still works');
+});
+
+test('an unconfigured server refuses admin rather than opening it', async () => {
+  const saved = process.env.ADMIN_TOKEN;
+  delete process.env.ADMIN_TOKEN;
+  // Failing open here is how a gate like this quietly stops working: the env
+  // var goes missing in a deploy and nothing looks broken.
+  const res = await api('/api/admin/invites', { headers: { 'X-Admin-Token': '' } });
+  assert.equal(res.status, 403);
+  process.env.ADMIN_TOKEN = saved;
 });
