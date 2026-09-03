@@ -14,6 +14,7 @@ import { localDayKey } from '/core/day.js';
 import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
 import { getMacroRecommendation } from '/core/recommendations.js';
+import { installUpdates } from '/pwa-update.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -2995,11 +2996,13 @@ function handleUrlActions() {
     return;
   }
 
+  // ?updated= was how the old worker signalled a forced reload. Clients
+  // installed before this change can still arrive carrying it, so it is
+  // cleaned up quietly; the message itself now comes from installUpdates.
   if (updated) {
     params.delete('updated');
     const rest = params.toString();
     history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : ''));
-    toast('Plate updated to latest version');
   }
 
   if (!action) return;
@@ -3059,50 +3062,17 @@ function inviteFromUrl() {
   }
 })();
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
-      reg.update().catch(() => {});
+installUpdates({
+  appName: 'Plate',
+  toast: (message) => toast(message),
+  // A photo estimate on screen means unsaved work: a correction typed in, a
+  // weight adjusted. Reloading through that would lose it, so the update waits
+  // until the sheet is done with.
+  isBusy: () => Boolean(state.estimate) && screenIsOpen('review')
+});
 
-      let reloading = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloading) return;
-        reloading = true;
-        location.reload();
-      });
-
-      // Prompt if an updated worker is waiting or installed
-      const promptUpdate = (worker) => {
-        toast('New version available', () => {
-          worker.postMessage({ type: 'SKIP_WAITING' });
-          location.reload();
-        });
-      };
-
-      if (reg.waiting) {
-        promptUpdate(reg.waiting);
-      }
-
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        if (!newWorker) return;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            promptUpdate(newWorker);
-          }
-        });
-      });
-
-      // Check for updates whenever the app is brought to foreground
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          reg.update().catch(() => {});
-          loadDay().catch(() => {});
-        }
-      });
-    } catch (e) {
-      console.warn('SW register error:', e);
-    }
-  });
-}
+// The day is refetched when the app comes back to the foreground; the update
+// check that used to live here now belongs to installUpdates.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadDay().catch(() => {});
+});

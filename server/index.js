@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { db, nowIso, PHOTO_DIR } from './db.js';
+import { swVersion } from './serve-sw.js';
 import {
   requireDevice, requireAdmin, redeemInvite, setTokenCookie,
   createInvite, listInvites, revokeInvite, COOKIE_NAME,
@@ -43,6 +44,19 @@ const PORT = Number(process.env.PORT || 8097);
 // Photos arrive base64-encoded inside JSON, already downscaled by the client.
 // 8 MB is generous for a 1600px JPEG and still bounds a malicious upload.
 app.use(express.json({ limit: '8mb' }));
+// Both of these go before express.static: it is configured with
+// extensions:['html'], so it would answer /bust from bust.html itself and the
+// Clear-Site-Data header -- the entire point of the route -- would be lost.
+app.get('/bust', (req, res) => {
+  // The escape hatch, for a client wedged on an old worker. sw.js refuses to
+  // intercept this path, or the way out would sit behind the thing it exists
+  // to get out of.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Clear-Site-Data', '"cache"');
+  res.sendFile(path.join(__dirname, '../web/bust.html'));
+});
+
+app.use(swVersion(path.join(__dirname, '../web')));
 app.use(express.static(path.join(__dirname, '../web'), { extensions: ['html'] }));
 
 // core/ is served to the browser so the PWA runs the same estimate and
@@ -57,47 +71,7 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next
 
 // ----------------------------------------------------------- cache buster
 
-app.get('/bust', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.setHeader('Clear-Site-Data', '"cache"');
-  res.send(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Updating Plate...</title>
-<style>
-body { background: #12140F; color: #EFF0E6; font-family: system-ui, -apple-system, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; text-align: center; }
-.spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #7CC79E; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
-</head>
-<body>
-<div>
-  <div class="spinner"></div>
-  <h2>Updating Plate...</h2>
-  <p>Clearing caches and loading the latest build.</p>
-</div>
-<script>
-(async () => {
-  try {
-    if ('caches' in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(k => caches.delete(k)));
-    }
-    if ('serviceWorker' in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(r => r.unregister()));
-    }
-  } catch (e) {
-    console.warn('Cache bust error:', e);
-  }
-  window.location.replace('/?updated=' + Date.now());
-})();
-</script>
-</body>
-</html>`);
-});
+
 
 // ---------------------------------------------------------------- health
 
