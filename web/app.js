@@ -8,11 +8,12 @@ import {
   totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
   addManualItem, hasPhotoItems, markWeighed, portionSourceOf
 } from '/core/analysis/estimate.js';
-import { toItem, isPlausible } from '/core/foods.js';
+import { toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
 import { macroAgreement } from '/core/nutrition.js';
 import { localDayKey } from '/core/day.js';
 import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
+import { getMacroRecommendation } from '/core/recommendations.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -27,6 +28,8 @@ const state = {
   busy: false,
   entriesById: new Map(),
   expenditure: null,
+  recentFoods: [],
+  grazingSelected: new Set(),
   // One sheet serves three paths: seeded from a photo, started empty and
   // filled by search, or loaded from a saved entry. Keeping them in one place
   // avoids three near-identical editors drifting apart.
@@ -62,12 +65,28 @@ async function api(path, options = {}) {
 }
 
 let toastTimer = null;
-function toast(message) {
+function toast(message, undoAction = null) {
   const el = $('toast');
-  el.textContent = message;
-  el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 2800);
+
+  if (undoAction) {
+    el.innerHTML = `<span>${esc(message)}</span><button type="button" class="toast-undo">Undo</button>`;
+    const btn = el.querySelector('.toast-undo');
+    btn?.addEventListener('click', async () => {
+      clearTimeout(toastTimer);
+      el.hidden = true;
+      try {
+        await undoAction();
+      } catch (err) {
+        toast(err.message);
+      }
+    }, { once: true });
+  } else {
+    el.textContent = message;
+  }
+
+  el.hidden = false;
+  toastTimer = setTimeout(() => { el.hidden = true; }, undoAction ? 6000 : 2800);
 }
 
 // ------------------------------------------------------------ navigation
@@ -311,24 +330,32 @@ function renderMaintenance(summary, expenditure) {
 const MACRO_META = [
   ['protein', 'Protein', 'var(--protein)', false],
   ['carbs', 'Carbs', 'var(--carbs)', false],
-  ['fat', 'Fat', 'var(--fat)', true]
+  ['fat', 'Fat', 'var(--fat)', true],
+  ['fiber', 'Fiber', 'var(--fiber)', false]
 ];
 
 function renderMacros(el, totals) {
   el.innerHTML = MACRO_META.map(([key, label, colour, lowConf]) => `
     <div class="${lowConf ? 'lowconf' : ''}">
       <dt style="--dot:${colour}">${label}</dt>
-      <dd>${Math.round(totals[key] || 0)} g</dd>
+      <dd>${Math.round(totals[key] || 0)}<small>g</small></dd>
     </div>`).join('');
 }
 
 function renderSplit(split) {
   const el = $('split');
-  if (!split) { el.innerHTML = ''; return; }
-  el.innerHTML =
+  const topbarEl = $('topbar-split');
+  if (!split) {
+    el.innerHTML = '';
+    if (topbarEl) topbarEl.innerHTML = '';
+    return;
+  }
+  const html =
     `<i class="p" style="width:${split.protein}%"></i>` +
     `<i class="c" style="width:${split.carbs}%"></i>` +
     `<i class="f" style="width:${split.fat}%"></i>`;
+  el.innerHTML = html;
+  if (topbarEl) topbarEl.innerHTML = html;
   el.setAttribute('aria-label',
     `Protein ${split.protein}%, carbohydrate ${split.carbs}%, fat ${split.fat}% of calories`);
 }
@@ -349,6 +376,23 @@ function badgeFor(entry) {
   return '<span class="badge-est">weight not set</span>';
 }
 
+function getFoodEmoji(name = '') {
+  const n = String(name || '').toLowerCase();
+  if (/\bbite\b|bouchée/i.test(n)) return '🍏';
+  if (/\bhandful\b|poignée/i.test(n)) return '🥜';
+  if (/\bsnack\b|collation/i.test(n)) return '🥐';
+  if (/nut|cajou|cashew|almond|amande|walnut|noix|peanut|cacahu|noisette|pistach|grain|seed/i.test(n)) return '🥜';
+  if (/choc|cacao|cookie|biscuit|cake|gateau|sweet|candy|bonbon|sugar|bar/i.test(n)) return '🍫';
+  if (/apple|pomme|fruit|banana|banane|berry|fraise|orange|raisin|grape|peach|poire|melon|citron/i.test(n)) return '🍎';
+  if (/cheese|fromage|yaourt|yogurt|milk|lait|butter|beurre/i.test(n)) return '🧀';
+  if (/coffee|café|tea|the|latte|espresso|drink|boisson|juice|jus|water|eau/i.test(n)) return '☕';
+  if (/chip|crisp|cracker|pretzel|popcorn|bread|pain|toast|croissant/i.test(n)) return '🥨';
+  if (/egg|oeuf|avocado|avocat|salad|salade|olive|hummus|houmous/i.test(n)) return '🥑';
+  if (/meat|beef|chicken|poulet|steak|pork|porc|fish|poisson|salmon|saumon|tuna|thon|viande/i.test(n)) return '🥩';
+  if (/pasta|pâtes|rice|riz|noodle|pizza|burger|sandwich/i.test(n)) return '🍝';
+  return '🍏';
+}
+
 function renderEntries(entries) {
   const list = $('entries');
   // Kept so a tap can reopen the entry in the editor without another request.
@@ -357,55 +401,759 @@ function renderEntries(entries) {
 
   list.innerHTML = entries.map((e) => {
     const foods = e.items.map((i) => i.name).join(', ');
-    const thumb = e.photoId
-      ? `<img src="/api/photo/${encodeURIComponent(e.photoId)}" alt="" loading="lazy">`
-      : '<div class="noimg" aria-hidden="true">&#9738;</div>';
+    const firstBarcode = e.items.find((i) => i.barcode)?.barcode;
+
+    let thumb;
+    if (e.photoId) {
+      thumb = `<img src="/api/photo/${encodeURIComponent(e.photoId)}" alt="" loading="lazy">`;
+    } else if (firstBarcode) {
+      thumb = `<img src="/api/barcode/${encodeURIComponent(firstBarcode)}/image" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'noimg food-emoji\\' aria-hidden=\\'true\\'>${getFoodEmoji(foods)}</div>'">`;
+    } else {
+      const emoji = getFoodEmoji(foods);
+      thumb = `<div class="noimg food-emoji" aria-hidden="true">${emoji}</div>`;
+    }
+
     const time = new Date(e.createdAt)
       .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+    const p = Math.round(e.totals?.protein ?? 0);
+    const c = Math.round(e.totals?.carbs ?? 0);
+    const f = Math.round(e.totals?.fat ?? 0);
 
     return `<li class="entry" data-id="${esc(e.id)}">
       ${thumb}
       <div class="entry-main">
         <div class="entry-foods">${esc(foods) || 'Meal'}</div>
         <div class="entry-meta">
-          <span>${e.meal ? esc(e.meal) : time}</span>
+          <span class="entry-meal">${e.meal ? esc(e.meal) : time}</span>
+          <span class="entry-meta-sep">•</span>
+          <span class="entry-macros" aria-label="Protein ${p}g, Carbs ${c}g, Fat ${f}g">
+            <span class="entry-macro p"><small>P</small>${p}g</span>
+            <span class="entry-macro c"><small>C</small>${c}g</span>
+            <span class="entry-macro f"><small>F</small>${f}g</span>
+          </span>
           ${badgeFor(e)}
         </div>
       </div>
       <div>
-        <div class="entry-kcal">${Math.round(e.totals.calories)}</div>
+        <div class="entry-kcal">${Math.round(e.totals?.calories ?? 0)}</div>
         <button class="entry-del" data-del="${esc(e.id)}" aria-label="Delete this entry">&times;</button>
       </div>
     </li>`;
   }).join('');
 }
 
+async function loadQuickBites() {
+  try {
+    const { recent } = await api('/api/foods/recent');
+    state.recentFoods = recent || [];
+  } catch {
+    state.recentFoods = [];
+  }
+  renderQuickBiteTray(state.recentFoods);
+}
+
+function renderQuickBiteTray(recents) {
+  const container = $('quick-bite-chips');
+  if (!container) return;
+
+  const suggestions = getGrazingSuggestions(recents || [], { limit: 4 });
+
+  const presetHtml = QUICK_BITES.map((b) =>
+    `<button class="bite-tile preset" type="button" data-preset="${esc(b.id)}" aria-label="Log ${esc(b.name)}">
+      <div class="tile-glyph">${b.icon || '🍏'}</div>
+      <div class="tile-name">${esc(b.label || b.name)}</div>
+      <div class="tile-badge">+${b.calories}<small>kcal</small></div>
+    </button>`
+  ).join('');
+
+  const recentHtml = suggestions.map((f, i) => {
+    const kcal = Math.round((f.per?.calories || 0) * (f.grams || 0));
+    const thumbHtml = f.barcode
+      ? `<img class="tile-img" src="/api/barcode/${esc(f.barcode)}/image" alt="" loading="lazy" onerror="this.outerHTML='<span class=\\'tile-glyph\\'>${getFoodEmoji(f.name)}</span>'">`
+      : `<span class="tile-glyph">${getFoodEmoji(f.name)}</span>`;
+
+    return `<button class="bite-tile recent" type="button" data-recent="${i}" aria-label="Log ${esc(f.name)} ${f.grams}g">
+      <div class="tile-thumb">${thumbHtml}</div>
+      <div class="tile-name" title="${esc(f.name)}">${esc(f.name)}</div>
+      <div class="tile-badge">+${kcal}<small>kcal</small></div>
+    </button>`;
+  }).join('');
+
+  const customHtml = `
+    <button class="bite-tile custom-tile" type="button" data-action="custom" aria-label="Add custom bite">
+      <div class="tile-glyph plus-glyph">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+      <div class="tile-name">Custom</div>
+    </button>`;
+
+  container.innerHTML = presetHtml + recentHtml + customHtml;
+}
+
+function getPlatoSvg(mood = 'happy') {
+  const isNom = mood === 'nom';
+  const isFull = mood === 'full';
+  const isThinking = mood === 'thinking';
+
+  let eyesSvg = '';
+  if (isNom) {
+    eyesSvg = `
+      <path d="M 57 37 Q 60 33 63 37" fill="none" stroke="#1C241D" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="75" cy="38" r="1.5" fill="#F59E0B"/>
+      <circle cx="79" cy="42" r="1" fill="#F59E0B"/>
+    `;
+  } else if (isFull) {
+    eyesSvg = `
+      <path d="M 56 37 Q 60 33 64 37" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>
+    `;
+  } else if (isThinking) {
+    eyesSvg = `
+      <!-- Thoughtful raised brow and curious eyes -->
+      <path d="M 56 30 Q 60 27 64 29" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>
+      <ellipse cx="60" cy="35" rx="3.8" ry="5.2" fill="#1C241D"/>
+      <circle cx="61.5" cy="33" r="1.8" fill="#FFFFFF"/>
+      <circle cx="58.5" cy="37" r="0.8" fill="#FFFFFF"/>
+      <!-- Lightbulb idea spark -->
+      <circle cx="76" cy="27" r="2.2" fill="#F59E0B"/>
+      <path d="M 76 22 L 76 20 M 72 24 L 70 23 M 80 24 L 82 23" stroke="#F59E0B" stroke-width="1.4" stroke-linecap="round"/>
+    `;
+  } else {
+    eyesSvg = `
+      <ellipse cx="60" cy="36" rx="4.2" ry="5.5" fill="#1C241D"/>
+      <circle cx="61.5" cy="34" r="1.8" fill="#FFFFFF"/>
+      <circle cx="58.5" cy="38" r="0.8" fill="#FFFFFF"/>
+    `;
+  }
+
+  let mouthSvg = '';
+  if (isNom) {
+    mouthSvg = `<path d="M 68 44 Q 72 49 76 45" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linecap="round"/>`;
+  } else if (isFull) {
+    mouthSvg = `<path d="M 67 44 Q 72 50 77 44" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>`;
+  } else if (isThinking) {
+    mouthSvg = `<path d="M 68 45 Q 71 43 75 45" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
+  } else {
+    mouthSvg = `<path d="M 68 44 Q 72 48 75 43" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
+  }
+
+  return `<svg viewBox="0 0 100 100" class="plato-dino-svg" xmlns="http://www.w3.org/2000/svg">
+    <!-- Dino back spikes -->
+    <path d="M 22 45 Q 16 48 22 55 Q 15 58 22 65" fill="none" stroke="#F59E0B" stroke-width="5" stroke-linecap="round"/>
+    <!-- Head & neck -->
+    <path d="M 32 78 C 30 65 30 45 42 32 C 52 22 72 24 78 35 C 84 44 80 56 68 58 C 60 59 55 68 54 78 Z" fill="#38A169"/>
+    <!-- Belly highlight -->
+    <path d="M 48 48 C 54 44 65 44 68 52 C 60 56 55 68 54 78 C 50 78 48 70 48 48 Z" fill="#6EE7B7" opacity="0.65"/>
+    <!-- Cheeks -->
+    <circle cx="66" cy="46" r="4.5" fill="#F43F5E" opacity="0.45"/>
+    ${eyesSvg}
+    ${mouthSvg}
+    <!-- Bib around neck -->
+    <path d="M 44 60 C 44 60 52 62 60 58 C 63 68 55 74 46 72 Z" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
+    <circle cx="53" cy="66" r="2.5" fill="#EF4444"/>
+    <path d="M 53 63 Q 54 61 55 62" fill="none" stroke="#10B981" stroke-width="1"/>
+    <!-- Arm -->
+    <path d="M 44 68 Q 38 65 36 72" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
+    <!-- Tiny wooden fork -->
+    <g transform="rotate(-18 34 68)">
+      <rect x="33" y="66" width="3" height="13" rx="1.5" fill="#D97706"/>
+      <path d="M 31 66 L 31 61 M 34 66 L 34 60 M 37 66 L 37 61" stroke="#D97706" stroke-width="1.2" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+}
+
+const PLATO_QUOTES = [
+  "Rawr means I love healthy food in dinosaur! 🦕",
+  "Spendosaurus counts the pennies, I count the calories! 🦖",
+  "A little graze here, a little graze there... it all counts! 🍏",
+  "Hydration check! Have you had water today? 💧",
+  "Protein makes dino muscles strong! 💪🌿",
+  "Honest logging is the secret to real progress! ✨",
+  "I'm a herbivore, but I respect the macros! 🥗",
+  "Back in the Jurassic, we didn't have barcode scanners. We just nibbled trees! 🌲",
+  "T-Rex skips arm day, but Platosaurus never skips meal logging! 🦖",
+  "Brachiosaurus was 40 tons of pure plant-powered gains! 🌿",
+  "Meteor showers? Scary. Forgetting to log olive oil? Even scarier! 🫒",
+  "Dinosaurs roamed for 165 million years, so take your time and build great habits! ⏳",
+  "Fossil record confirms: you're doing fantastic today! 🦴✨",
+  "Pterodactyls fly high, but your nutritional consistency is higher! 🦅",
+  "Prehistoric wisdom: a balanced plate prevents extinction! 🍽️",
+  "Herbivore secret: crisp greens give you mega sauropod energy! 🥬",
+  "My tiny wooden fork was carved from a petrified redwood tree! 🌲🍴",
+  "A bite of cheese, a handful of almonds... Plato sees all, Plato logs all! 🧀",
+  "Grazing is an ancient dinosaur foraging technique. Very respectable! 🌾",
+  "Did you know? Two bites of cookie still count as fuel! 🍪",
+  "Honest snacking beats secret snacking every single time! 🌟",
+  "That little 50 kcal apple bite was sheer culinary perfection! 🍏",
+  "Handful of berries? Top-tier foraging behavior right there! 🫐",
+  "Snack smarter, rawr louder! 🦕📣",
+  "No guilt on this plate — just delicious fuel and great data! 📊",
+  "Crunch crunch crunch... is that a handful of pretzels I hear? 🥨",
+  "Even three cashew nuts deserve their moment of glory in the log! 🥜",
+  "Consistency is your superpower. Small steps move big mountains! 🏔️",
+  "One good meal at a time. No stress, just steady fueling! 🎯",
+  "Nutrition isn't about perfection, it's about awareness! 💡",
+  "Drink a tall glass of water! Your inner dinosaur will thank you! 💧🦕",
+  "Fueling your body well is the ultimate form of self-respect! 💚",
+  "You don't need a cheat day when you genuinely enjoy what you eat! 🥑",
+  "A colorful plate is a happy plate. Look at those vibrant macros! 🌈",
+  "High protein day? Platosaurus flexes his tiny sauropod bicep! 💪",
+  "Energy in, energy out — the ancient rhythm of the cosmos! 🌌",
+  "Progress isn't a straight line, it's a gentle, steady trend! 📈",
+  "Spendosaurus saves the dollars, I savor the calories! 💰😋",
+  "Can dinosaurs have espresso? Asking for a prehistoric friend! ☕🦖",
+  "Rawr! That's dinosaur for 'I believe in you!' 🦕❤️",
+  "My bib has an apple on it because fresh fruit never disappoints! 🍎",
+  "Did someone say carbs? Carbs are just energy waiting to be unleashed! ⚡",
+  "Healthy fats make everything taste better. Avocados are honorary dinos! 🥑",
+  "Plate is full, spirit is strong, belly is satisfied! 😋",
+  "If you ever lose motivation, remember: you're way more evolved than a Stegosaurus! 🦕",
+  "I may have a small dino brain, but my nutritional instincts are razor sharp! 🧠✨",
+  "Tap me again! I have 165 million years worth of food advice! 🦕💬",
+  "Snack time is undeniably the best hour of the 24-hour day! 🕒🥨",
+  "Who needs a personal trainer when you have a personal sauropod? 🦖🏋️",
+  "Eating mindful meals is the modern version of top-tier foraging! 🧺",
+  "If you enjoy chocolate, log it with pride! No hiding from Platosaurus! 🍫",
+  "Fiber keeps the dinosaur digestive system running smooth as clockwork! 🌾",
+  "Fun fact: Sauropods ate 400 kg of greens a day. You only need a tasty salad! 🥗",
+  "Treat your body like a treasured museum fossil: take good care of it! 🏛️✨",
+  "Today's forecast: 100% chance of great nutrition and happy dinos! ☀️🦕",
+  "Every meal logged is a victory for your future self! 🏆",
+  "Stay curious, eat delicious food, and keep crushing your goals! 🚀"
+];
+
+let platoCycleTimer = null;
+let lastPlatoQuoteIdx = -1;
+
+function getNextPlatoQuote() {
+  if (!PLATO_QUOTES.length) return "Rawr! 🦕";
+  let idx = Math.floor(Math.random() * PLATO_QUOTES.length);
+  if (idx === lastPlatoQuoteIdx && PLATO_QUOTES.length > 1) {
+    idx = (idx + 1) % PLATO_QUOTES.length;
+  }
+  lastPlatoQuoteIdx = idx;
+  return PLATO_QUOTES[idx];
+}
+
+function cyclePlatoMessage(specificMessage = null, bounce = false) {
+  const speech = $('plato-speech');
+  const btn = $('plato-avatar');
+  const wrap = $('plato-svg-wrap');
+  if (!speech) return;
+
+  // Don't interrupt if Plato is currently munching on a fresh bite
+  if (!specificMessage && state.lastBiteMunchTime && (Date.now() - state.lastBiteMunchTime < 4500)) {
+    return;
+  }
+
+  const message = specificMessage || (state.activePlatoRecommendation?.text && !bounce
+    ? state.activePlatoRecommendation.text
+    : getNextPlatoQuote());
+
+  if (bounce && btn) {
+    btn.classList.remove('is-bouncing');
+    void btn.offsetWidth;
+    btn.classList.add('is-bouncing');
+    if ('vibrate' in navigator) {
+      try { navigator.vibrate([15, 30, 15]); } catch {}
+    }
+  }
+
+  speech.style.opacity = '0';
+  setTimeout(() => {
+    speech.textContent = message;
+    speech.style.opacity = '1';
+    if (wrap && (!state.lastBiteMunchTime || (Date.now() - state.lastBiteMunchTime >= 4500))) {
+      const mood = message === state.activePlatoRecommendation?.text
+        ? (state.activePlatoRecommendation?.mood || 'happy')
+        : 'happy';
+      wrap.innerHTML = getPlatoSvg(mood);
+    }
+  }, 150);
+}
+
+function startPlatoCycle() {
+  if (platoCycleTimer) clearInterval(platoCycleTimer);
+  platoCycleTimer = setInterval(() => {
+    cyclePlatoMessage();
+  }, 20000);
+}
+
+function updatePlatoCompanion(summary, split = null, entries = []) {
+  const wrap = $('plato-svg-wrap');
+  const speech = $('plato-speech');
+  const actionsEl = $('plato-actions');
+  if (!wrap || !speech) return;
+
+  if (state.lastBiteMunchTime && (Date.now() - state.lastBiteMunchTime < 4500)) {
+    wrap.innerHTML = getPlatoSvg('nom');
+    speech.textContent = state.lastBiteName
+      ? `Nom nom nom! ${state.lastBiteName} was delicious! 😋`
+      : `Nom nom nom! Delicious snack! 🍏`;
+    if (actionsEl) { actionsEl.hidden = true; actionsEl.innerHTML = ''; }
+    return;
+  }
+
+  const diet = state.me?.profile?.diet || 'omnivore';
+  const dietaryGoal = state.me?.profile?.dietaryGoal || 'balanced';
+  const weightKg = state.me?.weightUsedKg || state.me?.profile?.weightKg || null;
+  const entriesCount = entries?.length ?? state.entriesById?.size ?? 0;
+
+  const rec = getMacroRecommendation({
+    totals: summary?.totals,
+    split,
+    diet,
+    dietaryGoal,
+    entriesCount,
+    weightKg
+  });
+
+  if (rec) {
+    state.activePlatoRecommendation = rec;
+    wrap.innerHTML = getPlatoSvg(rec.mood || 'happy');
+    speech.textContent = rec.text;
+
+    if (actionsEl) {
+      if (rec.suggestions?.length) {
+        actionsEl.hidden = false;
+        actionsEl.innerHTML = rec.suggestions.map((s) =>
+          `<button type="button" class="plato-chip" data-name="${esc(s.name)}" data-calories="${s.calories}" data-grams="${s.grams}" data-protein="${s.protein}" data-fat="${s.fat}" data-carbs="${s.carbs}" data-fiber="${s.fiber ?? 0}">
+            <span>+ ${esc(s.name)}</span>
+            <span class="plato-chip-cal">${s.calories} kcal</span>
+          </button>`
+        ).join('');
+      } else {
+        actionsEl.hidden = true;
+        actionsEl.innerHTML = '';
+      }
+    }
+    return;
+  }
+
+  state.activePlatoRecommendation = null;
+  if (actionsEl) {
+    actionsEl.hidden = true;
+    actionsEl.innerHTML = '';
+  }
+
+  if (!speech.textContent || speech.textContent === 'Rawr! What are we eating today?') {
+    speech.textContent = getNextPlatoQuote();
+  }
+
+  wrap.innerHTML = getPlatoSvg('happy');
+}
+
 async function loadDay() {
-  $('day-label').textContent = dayTitle(state.day);
+  const title = dayTitle(state.day);
+  const labelText = $('day-label-text');
+  if (labelText) labelText.textContent = title;
+  else $('day-label').textContent = title;
+
   const data = await api(`/api/entries?day=${state.day}`);
 
   state.expenditure = data.expenditure || null;
   renderProfileBanner(data.expenditure);
-  $('day-kcal').textContent = Math.round(data.summary.totals.calories);
+  const kcalVal = Math.round(data.summary.totals.calories);
+  $('day-kcal').textContent = kcalVal;
+  const compactKcal = $('day-compact-kcal');
+  if (compactKcal) compactKcal.textContent = kcalVal;
+  const pVal = $('day-compact-p');
+  if (pVal) pVal.textContent = Math.round(data.summary.totals.protein || 0);
+  const cVal = $('day-compact-c');
+  if (cVal) cVal.textContent = Math.round(data.summary.totals.carbs || 0);
+  const fVal = $('day-compact-f');
+  if (fVal) fVal.textContent = Math.round(data.summary.totals.fat || 0);
+  const fibVal = Math.round(data.summary.totals.fiber || 0);
+  const fibEl = $('day-compact-fib');
+  if (fibEl) fibEl.textContent = fibVal;
+
   renderMaintenance(data.summary, data.expenditure);
   renderSplit(data.split);
   renderMacros($('macros'), data.summary.totals);
   renderWeigh(state.day, data.weight, data.expenditure);
   renderEntries(data.entries);
+  await loadQuickBites();
+  updatePlatoCompanion(data.summary, data.split, data.entries);
 }
 
-$('prev-day').addEventListener('click', () => {
-  track('day_nav', { dir: -1 });
-  state.day = shiftDay(state.day, -1); loadDay();
+$('quick-bite-chips')?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.bite-tile');
+  if (!btn || state.busy) return;
+
+  if (btn.dataset.action === 'custom') {
+    const dialog = $('quick-custom-dialog');
+    if (dialog) {
+      dialog.hidden = !dialog.hidden;
+      if (!dialog.hidden) {
+        $('quick-name')?.focus();
+        dialog.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+    return;
+  }
+
+  if ('vibrate' in navigator) {
+    try { navigator.vibrate(10); } catch {}
+  }
+
+  let item = null;
+  const presetId = btn.dataset.preset;
+  const recentIdx = btn.dataset.recent;
+
+  if (presetId) {
+    const preset = QUICK_BITES.find((p) => p.id === presetId);
+    if (preset) item = createQuickBiteItem(preset);
+  } else if (recentIdx !== undefined) {
+    const suggestions = getGrazingSuggestions(state.recentFoods, { limit: 4 });
+    const f = suggestions[Number(recentIdx)];
+    if (f) {
+      item = {
+        name: f.name,
+        grams: f.grams,
+        per100: {
+          calories: Math.round((f.per?.calories || 0) * 100 * 10) / 10,
+          protein: Math.round((f.per?.protein || 0) * 100 * 10) / 10,
+          fat: Math.round((f.per?.fat || 0) * 100 * 10) / 10,
+          carbs: Math.round((f.per?.carbs || 0) * 100 * 10) / 10
+        },
+        barcode: f.barcode || null
+      };
+    }
+  }
+
+  if (!item) return;
+
+  const cal = Math.round((item.per100.calories * item.grams) / 100);
+  const estimate = addManualItem({ items: [], portionSource: 'model', note: '' }, item);
+
+  state.busy = true;
+  try {
+    const res = await api('/api/entries', {
+      method: 'POST',
+      body: JSON.stringify({
+        day: state.day,
+        meal: 'snack',
+        items: estimate.items,
+        portionSource: 'estimated',
+        portionConfirmed: true,
+        note: 'Quick bite'
+      })
+    });
+    track('quick_bite_logged', { name: item.name, calories: cal });
+    state.lastBiteMunchTime = Date.now();
+    state.lastBiteName = item.name;
+    const avatarBtn = $('plato-avatar');
+    if (avatarBtn) {
+      avatarBtn.classList.remove('is-bouncing');
+      void avatarBtn.offsetWidth;
+      avatarBtn.classList.add('is-bouncing');
+    }
+    const entryId = res.entry?.id;
+    await loadDay();
+    toast(`Logged ${item.name}`, entryId ? async () => {
+      await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+      track('entry_deleted');
+      toast('Undone');
+      await loadDay();
+    } : null);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    state.busy = false;
+  }
 });
-$('next-day').addEventListener('click', () => {
+
+$('quick-custom-btn')?.addEventListener('click', () => {
+  const dialog = $('quick-custom-dialog');
+  dialog.hidden = !dialog.hidden;
+  if (!dialog.hidden) {
+    $('quick-name').focus();
+  }
+});
+
+$('quick-custom-cancel')?.addEventListener('click', () => {
+  $('quick-custom-dialog').hidden = true;
+});
+
+$('quick-custom-form')?.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const name = $('quick-name').value.trim() || 'Quick snack';
+  const kcal = Number($('quick-kcal').value);
+  const grams = Number($('quick-grams').value) || (kcal <= 70 ? 15 : kcal <= 150 ? 30 : 50);
+
+  if (!Number.isFinite(kcal) || kcal <= 0) return toast('Enter calories');
+
+  const item = createQuickBiteItem({ name, calories: kcal, grams });
+  const estimate = addManualItem({ items: [], portionSource: 'model', note: '' }, item);
+
+  state.busy = true;
+  try {
+    const res = await api('/api/entries', {
+      method: 'POST',
+      body: JSON.stringify({
+        day: state.day,
+        meal: 'snack',
+        items: estimate.items,
+        portionSource: 'estimated',
+        portionConfirmed: true,
+        note: 'Quick snack'
+      })
+    });
+    track('quick_bite_logged', { name, calories: kcal, custom: true });
+    state.lastBiteMunchTime = Date.now();
+    state.lastBiteName = name;
+    const customAvatarBtn = $('plato-avatar');
+    if (customAvatarBtn) {
+      customAvatarBtn.classList.remove('is-bouncing');
+      void customAvatarBtn.offsetWidth;
+      customAvatarBtn.classList.add('is-bouncing');
+    }
+    $('quick-name').value = '';
+    $('quick-kcal').value = '';
+    $('quick-grams').value = '';
+    $('quick-custom-dialog').hidden = true;
+    const entryId = res.entry?.id;
+    await loadDay();
+    toast(`Logged ${name} (${kcal} kcal)`, entryId ? async () => {
+      await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+      track('entry_deleted');
+      toast('Undone');
+      await loadDay();
+    } : null);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    state.busy = false;
+  }
+});
+
+$('plato-actions')?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.plato-chip');
+  if (!btn || state.busy) return;
+  ev.stopPropagation();
+
+  const name = btn.dataset.name;
+  const kcal = Number(btn.dataset.calories) || 100;
+  const grams = Number(btn.dataset.grams) || 100;
+  const protein = Number(btn.dataset.protein) || 0;
+  const fat = Number(btn.dataset.fat) || 0;
+  const carbs = Number(btn.dataset.carbs) || 0;
+  const fiber = Number(btn.dataset.fiber) || 0;
+
+  const item = {
+    name,
+    grams,
+    per100: {
+      calories: Math.round((kcal / grams) * 100 * 10) / 10,
+      protein: Math.round((protein / grams) * 100 * 10) / 10,
+      fat: Math.round((fat / grams) * 100 * 10) / 10,
+      carbs: Math.round((carbs / grams) * 100 * 10) / 10,
+      fiber: Math.round((fiber / grams) * 100 * 10) / 10
+    }
+  };
+
+  const est = addManualItem({ items: [], portionSource: 'model', note: '' }, item);
+  state.busy = true;
+  try {
+    const res = await api('/api/entries', {
+      method: 'POST',
+      body: JSON.stringify({
+        day: state.day,
+        meal: 'snack',
+        items: est.items,
+        portionSource: 'estimated',
+        portionConfirmed: true,
+        note: `Bitey recommendation: ${name}`
+      })
+    });
+    track('recommendation_logged', { name, calories: kcal, diet: state.me?.profile?.diet });
+    state.lastBiteMunchTime = Date.now();
+    state.lastBiteName = name;
+
+    const avatarBtn = $('plato-avatar');
+    if (avatarBtn) {
+      avatarBtn.classList.remove('is-bouncing');
+      void avatarBtn.offsetWidth;
+      avatarBtn.classList.add('is-bouncing');
+    }
+
+    const entryId = res.id;
+    await loadDay();
+    toast(`Logged ${name} (${kcal} kcal)`, entryId ? async () => {
+      await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+      track('entry_deleted');
+      toast('Undone');
+      await loadDay();
+    } : null);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    state.busy = false;
+  }
+});
+
+const onPlatoTap = (ev) => {
+  if (ev?.target?.closest?.('.plato-chip')) return;
+  cyclePlatoMessage(null, true);
+  startPlatoCycle();
+};
+$('plato-card')?.addEventListener('click', onPlatoTap);
+$('plato-card')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    onPlatoTap();
+  }
+});
+
+let isDayNavigating = false;
+
+async function cardDealTransition(direction, updateFn) {
+  const cards = $('day-cards') || $('day-view');
+  if (isDayNavigating) return;
+  isDayNavigating = true;
+
+  try {
+    const exitClass = direction === 'prev' ? 'card-deal-exit-right' : 'card-deal-exit-left';
+    const enterClass = direction === 'prev' ? 'card-deal-enter-left' : 'card-deal-enter-right';
+
+    if (cards) {
+      cards.classList.remove('card-deal-enter-left', 'card-deal-enter-right', 'card-deal-exit-left', 'card-deal-exit-right', 'card-wobble-blocked');
+      cards.classList.add(exitClass);
+    }
+
+    // Fast 85ms exit flick
+    await new Promise((r) => setTimeout(r, 85));
+
+    // Update the day and load data
+    await updateFn();
+
+    // Plato cheers / hops for the new day
+    const platoBtn = $('plato-avatar');
+    if (platoBtn) {
+      platoBtn.classList.remove('is-bouncing');
+      void platoBtn.offsetWidth;
+      platoBtn.classList.add('is-bouncing');
+    }
+
+    if (cards) {
+      cards.classList.remove(exitClass);
+      void cards.offsetWidth; // force reflow
+      cards.classList.add(enterClass);
+      setTimeout(() => {
+        cards.classList.remove(enterClass);
+      }, 300);
+    }
+  } finally {
+    isDayNavigating = false;
+  }
+}
+
+async function goToPrevDay(source = 'button') {
+  track('day_nav', { dir: -1, source });
+  if ('vibrate' in navigator) try { navigator.vibrate(12); } catch {}
+  await cardDealTransition('prev', async () => {
+    state.day = shiftDay(state.day, -1);
+    await loadDay();
+  });
+}
+
+async function goToNextDay(source = 'button') {
   const next = shiftDay(state.day, 1);
-  // Logging into the future is always a mistake, so the control stops at today.
-  if (next > localDayKey()) return toast('That is tomorrow.');
-  state.day = next;
-  loadDay();
+  if (next > localDayKey()) {
+    const cards = $('day-cards') || $('day-view');
+    if (cards) {
+      cards.classList.remove('card-wobble-blocked');
+      void cards.offsetWidth;
+      cards.classList.add('card-wobble-blocked');
+      setTimeout(() => cards.classList.remove('card-wobble-blocked'), 340);
+    }
+    if ('vibrate' in navigator) try { navigator.vibrate([15, 30, 15]); } catch {}
+    return toast('That is tomorrow.');
+  }
+
+  track('day_nav', { dir: 1, source });
+  if ('vibrate' in navigator) try { navigator.vibrate(12); } catch {}
+  await cardDealTransition('next', async () => {
+    state.day = next;
+    await loadDay();
+  });
+}
+
+function initDaySwipe() {
+  let startX = 0;
+  let startY = 0;
+  let startTime = 0;
+  let isIgnored = false;
+  let isVerticalScroll = false;
+
+  window.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) {
+      isIgnored = true;
+      return;
+    }
+    if (document.querySelector('.sheet:not([hidden])') || $('app').hidden) {
+      isIgnored = true;
+      return;
+    }
+    if (e.target.closest('.quick-bite-scroll, input, textarea, select')) {
+      isIgnored = true;
+      return;
+    }
+    isIgnored = false;
+    isVerticalScroll = false;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    startTime = Date.now();
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (isIgnored || isVerticalScroll || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+      isVerticalScroll = true;
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', (e) => {
+    if (isIgnored || isVerticalScroll) return;
+    if (!e.changedTouches || e.changedTouches.length === 0) return;
+
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    const dt = Date.now() - startTime;
+
+    if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) * 1.4 && dt < 600) {
+      if (dx > 0) {
+        goToPrevDay('swipe');
+      } else {
+        goToNextDay('swipe');
+      }
+    }
+  }, { passive: true });
+
+  window.addEventListener('keydown', (e) => {
+    if ($('app').hidden || document.querySelector('.sheet:not([hidden])')) return;
+    if (e.target.closest('input, textarea, select')) return;
+    if (e.key === 'ArrowLeft') {
+      goToPrevDay('keyboard');
+    } else if (e.key === 'ArrowRight') {
+      goToNextDay('keyboard');
+    }
+  });
+}
+
+$('prev-day')?.addEventListener('click', () => goToPrevDay('button'));
+$('next-day')?.addEventListener('click', () => goToNextDay('button'));
+$('day-label').addEventListener('click', () => {
+  if (window.scrollY > 80) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    state.day = localDayKey();
+    loadDay();
+  }
 });
-$('day-label').addEventListener('click', () => { state.day = localDayKey(); loadDay(); });
 
 $('entries').addEventListener('click', async (ev) => {
   const deleteId = ev.target.closest('[data-del]')?.dataset.del;
@@ -679,15 +1427,21 @@ function renderWeigh(day, weight, expenditure) {
 
   if (weight?.today !== null && weight?.today !== undefined) {
     const t = weight.trend;
-    const sub = t
-      ? `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week`
-      : 'a trend needs 3 weigh-ins over a week';
+    let sub = '';
+    if (t) {
+      const dir = t.slopeKgPerWeek < 0 ? 'down' : 'up';
+      sub = `${dir} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg/wk`;
+    } else {
+      sub = 'trend needs 3 days';
+    }
     el.innerHTML = `
-      <button class="weigh-row" type="button" id="weigh-open">
-        <span class="ico">${SCALE_ICON}</span>
-        <span class="lab">${isToday ? 'Weighed in today' : 'Weight that day'}
-          <span class="sub">${esc(sub)}</span></span>
-        <span class="val">${weight.today.toFixed(1)} kg</span>
+      <button class="weigh-row weigh-pill" type="button" id="weigh-open">
+        <span class="weigh-pill-left">
+          <span class="ico">${SCALE_ICON}</span>
+          <span class="val">${weight.today.toFixed(1)}<small>kg</small></span>
+          <span class="weigh-dot">•</span>
+          <span class="sub">${esc(sub)}</span>
+        </span>
         <span class="chev" aria-hidden="true">&rsaquo;</span>
       </button>`;
   } else {
@@ -696,16 +1450,19 @@ function renderWeigh(day, weight, expenditure) {
     const p = expenditure?.method !== 'measured' ? expenditure?.progress : null;
     const left = p && p.weighings < p.neededWeighings ? p.neededWeighings - p.weighings : 0;
     const sub = left
-      ? `${left} more and this becomes a measurement`
-      : 'keeps the estimate honest';
-    const title = isToday ? 'Weigh in' : 'No weight for this day';
-    const line = isToday ? sub : 'Fill it in — it counts towards the estimate.';
+      ? `${left} more to measure`
+      : 'keeps estimate honest';
+    const title = isToday ? 'Weigh in' : 'No weight';
     el.innerHTML = `
-      <div style="display:flex;align-items:center">
-        <button class="weigh-row" type="button" id="weigh-open">
-          <span class="ico">${SCALE_ICON}</span>
-          <span class="lab">${esc(title)}<span class="sub">${esc(line)}</span></span>
-          <span class="val dim">${weight?.last ? `${weight.last.toFixed(1)} kg` : ''}</span>
+      <div class="weigh-pill-wrap">
+        <button class="weigh-row weigh-pill" type="button" id="weigh-open">
+          <span class="weigh-pill-left">
+            <span class="ico">${SCALE_ICON}</span>
+            <span class="lab">${esc(title)}</span>
+            <span class="weigh-dot">•</span>
+            <span class="sub">${esc(sub)}</span>
+          </span>
+          ${weight?.last ? `<span class="val dim">${weight.last.toFixed(1)}<small>kg</small></span>` : ''}
           <span class="chev" aria-hidden="true">&rsaquo;</span>
         </button>
         ${isToday ? `<button class="weigh-dismiss" type="button" id="weigh-skip"
@@ -1011,10 +1768,27 @@ function teardownReview() {
   // still open and returns without clearing anything, so the overlay has to
   // come down with the sheet or it would outlive it.
   $('wait').hidden = true;
-  $('review').hidden = true;
+  const sheet = $('review');
+  if (sheet) {
+    sheet.hidden = true;
+    sheet.classList.remove('closing');
+  }
 }
 
-const closeReview = () => dismissScreen('review');
+function closeReview() {
+  document.activeElement?.blur?.();
+  const sheet = $('review');
+  if (sheet && !sheet.hidden && !sheet.classList.contains('closing')) {
+    sheet.classList.add('closing');
+    setTimeout(() => {
+      teardownReview();
+    }, 180);
+  } else {
+    teardownReview();
+  }
+  dismissScreen('review');
+}
+
 $('review-close').addEventListener('click', closeReview);
 $('review').addEventListener('click', (ev) => { if (ev.target === $('review')) closeReview(); });
 $('add-manual').addEventListener('click', () => openReview('manual'));
@@ -1112,8 +1886,78 @@ function renderReview() {
     </li>`).join('');
 
   renderMealChips();
+  renderGrazingCatchup();
   $('save-entry').disabled = est.items.length === 0;
 }
+
+function renderGrazingCatchup() {
+  const panel = $('grazing-panel');
+  const toggle = $('grazing-toggle');
+  const chipsContainer = $('grazing-chips');
+  const catchupSection = $('grazing-catchup');
+  if (!chipsContainer || !catchupSection) return;
+
+  if (state.mode === 'edit') {
+    catchupSection.hidden = true;
+    return;
+  }
+  catchupSection.hidden = false;
+
+  const suggestions = getGrazingSuggestions(state.recentFoods || [], { limit: 4 });
+  const items = [
+    ...QUICK_BITES.map((b) => ({
+      id: b.id,
+      name: b.name,
+      label: b.label || b.name,
+      icon: b.icon || '🍏',
+      cal: b.calories,
+      raw: b,
+      type: 'preset'
+    })),
+    ...suggestions.map((f, i) => {
+      const kcal = Math.round((f.per?.calories || 0) * (f.grams || 0));
+      return {
+        id: `rec-${i}`,
+        name: `${f.name} (${f.grams}g)`,
+        label: f.name,
+        icon: getFoodEmoji(f.name),
+        cal: kcal,
+        raw: f,
+        type: 'recent'
+      };
+    })
+  ];
+
+  chipsContainer.innerHTML = items.map((it) => {
+    const isPressed = state.grazingSelected.has(it.id);
+    return `<button class="grazing-chip" type="button" data-id="${esc(it.id)}" aria-pressed="${isPressed}">
+      <span class="chip-icon">${it.icon}</span>
+      <span class="chip-name">${esc(it.label)}</span>
+      <span class="chip-cal">+${it.cal}</span>
+    </button>`;
+  }).join('');
+  chipsContainer.dataset.items = JSON.stringify(items);
+}
+
+$('grazing-toggle')?.addEventListener('click', () => {
+  const panel = $('grazing-panel');
+  panel.hidden = !panel.hidden;
+  $('grazing-toggle').setAttribute('aria-expanded', String(!panel.hidden));
+});
+
+$('grazing-chips')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.grazing-chip');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const selected = btn.getAttribute('aria-pressed') === 'true';
+  const next = !selected;
+  btn.setAttribute('aria-pressed', String(next));
+  if (next) {
+    state.grazingSelected.add(id);
+  } else {
+    state.grazingSelected.delete(id);
+  }
+});
 
 function renderMealChips() {
   const meals = state.me?.meals || ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -1448,7 +2292,8 @@ function readManual() {
     calories: kcal * scale,
     protein: (manualNumber('m-protein') ?? 0) * scale,
     fat: (manualNumber('m-fat') ?? 0) * scale,
-    carbs: (manualNumber('m-carbs') ?? 0) * scale
+    carbs: (manualNumber('m-carbs') ?? 0) * scale,
+    fiber: (manualNumber('m-fiber') ?? 0) * scale
   };
   return { name: $('m-name').value.trim(), grams, per100 };
 }
@@ -1499,8 +2344,8 @@ function checkManual() {
   return parsed;
 }
 
-for (const id of ['m-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs']) {
-  $(id).addEventListener('input', checkManual);
+for (const id of ['m-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs', 'm-fiber']) {
+  $(id)?.addEventListener('input', checkManual);
 }
 
 $('m-add').addEventListener('click', () => {
@@ -1512,7 +2357,7 @@ $('m-add').addEventListener('click', () => {
   state.estimate = addManualItem(
     state.estimate || { items: [], portionSource: 'model', note: '' }, parsed);
 
-  for (const id of ['m-name', 'm-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs']) $(id).value = '';
+  for (const id of ['m-name', 'm-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs', 'm-fiber']) if ($(id)) $(id).value = '';
   $('manual-warn').hidden = true;
   $('manual-form').hidden = true;
   syncManualToggle();
@@ -1689,6 +2534,48 @@ $('save-entry').addEventListener('click', async () => {
         })
       });
     }
+
+    // Save any catch-up grazing items selected during this meal review
+    if (state.mode !== 'edit' && state.grazingSelected?.size > 0) {
+      const allItems = JSON.parse($('grazing-chips')?.dataset?.items || '[]');
+      for (const id of state.grazingSelected) {
+        const found = allItems.find((it) => it.id === id);
+        if (!found) continue;
+        let biteItem = null;
+        if (found.type === 'preset') {
+          biteItem = createQuickBiteItem(found.raw);
+        } else if (found.type === 'recent') {
+          const f = found.raw;
+          biteItem = {
+            name: f.name,
+            grams: f.grams,
+            per100: {
+              calories: Math.round((f.per?.calories || 0) * 100 * 10) / 10,
+              protein: Math.round((f.per?.protein || 0) * 100 * 10) / 10,
+              fat: Math.round((f.per?.fat || 0) * 100 * 10) / 10,
+              carbs: Math.round((f.per?.carbs || 0) * 100 * 10) / 10
+            },
+            barcode: f.barcode || null
+          };
+        }
+        if (biteItem) {
+          const est = addManualItem({ items: [], portionSource: 'model', note: '' }, biteItem);
+          await api('/api/entries', {
+            method: 'POST',
+            body: JSON.stringify({
+              day: state.day,
+              meal: 'snack',
+              items: est.items,
+              portionSource: 'estimated',
+              portionConfirmed: true,
+              note: 'Grazing catch-up'
+            })
+          });
+        }
+      }
+      track('grazing_catchup_added', { count: state.grazingSelected.size });
+    }
+
     state.savedFromReview = true;
     track(state.mode === 'edit' ? 'entry_edited' : 'entry_saved',
       { mode: state.mode, items: state.estimate.items.length, portion: portionSourceOf(state.estimate) });
@@ -1714,11 +2601,22 @@ function fillProfile() {
   $('p-activity').innerHTML = (state.me?.activityLevels || [])
     .map((l) => `<option value="${esc(l.id)}">${esc(l.label)}</option>`).join('');
 
+  if ($('p-diet') && state.me?.diets) {
+    $('p-diet').innerHTML = state.me.diets
+      .map((d) => `<option value="${esc(d.id)}">${esc(d.label)}</option>`).join('');
+  }
+  if ($('p-goal') && state.me?.dietaryGoals) {
+    $('p-goal').innerHTML = state.me.dietaryGoals
+      .map((g) => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join('');
+  }
+
   if (!p) return;
   $('p-height').value = p.heightCm ?? '';
   $('p-age').value = p.ageYears ?? '';
   $('p-sex').value = p.sex ?? '';
   if (p.activity) $('p-activity').value = p.activity;
+  if (p.diet && $('p-diet')) $('p-diet').value = p.diet;
+  if (p.dietaryGoal && $('p-goal')) $('p-goal').value = p.dietaryGoal;
   showMaintenanceResult(state.me.maintenance, state.me.weightUsedKg);
 }
 
@@ -1785,7 +2683,9 @@ $('profile-form').addEventListener('submit', async (ev) => {
         heightCm: $('p-height').value || null,
         ageYears: $('p-age').value || null,
         sex: $('p-sex').value || null,
-        activity: $('p-activity').value || null
+        activity: $('p-activity').value || null,
+        diet: $('p-diet')?.value || 'omnivore',
+        dietaryGoal: $('p-goal')?.value || 'balanced'
       })
     });
     state.me.profile = data.profile;
@@ -2028,12 +2928,97 @@ $('logout').addEventListener('click', async () => {
 
 // ----------------------------------------------------------------- start
 
+function initStickyDayTracker() {
+  const totalsSection = document.querySelector('.totals');
+  const topbar = document.querySelector('.topbar');
+  const compactTracker = $('day-compact-tracker');
+  const topbarSplit = $('topbar-split');
+  const platoCard = $('plato-card');
+
+  // Calories, macros and split bar are always visible in the today card
+  if (compactTracker) compactTracker.hidden = false;
+  if (topbarSplit) topbarSplit.hidden = false;
+
+  const updateTopbarHeight = () => {
+    const h = topbar.offsetHeight || 60;
+    document.documentElement.style.setProperty('--topbar-h', `${h}px`);
+  };
+  updateTopbarHeight();
+  window.addEventListener('resize', updateTopbarHeight);
+
+  const updateStickyState = () => {
+    const isScrolled = window.scrollY > 20;
+    topbar.classList.toggle('scrolled', isScrolled);
+    if (platoCard) {
+      platoCard.classList.toggle('is-sticky', isScrolled);
+    }
+  };
+
+  window.addEventListener('scroll', updateStickyState, { passive: true });
+  updateStickyState();
+}
+
 async function start() {
   state.me = await api('/api/me');
   // The server decides. Nothing is collected until it says so.
   startTracking(state.me.trackingEnabled);
   if (!state.me.analysisConfigured) toast('Photo analysis is not configured on this server.');
   await loadDay();
+  handleUrlActions();
+  initStickyDayTracker();
+  cyclePlatoMessage();
+  startPlatoCycle();
+  initDaySwipe();
+}
+
+/**
+ * Handles launcher / PWA shortcuts and update notices passed via query string.
+ */
+function handleUrlActions() {
+  const params = new URLSearchParams(location.search);
+  const action = params.get('action');
+  const updated = params.get('updated');
+
+  if (params.has('bust') || action === 'bust') {
+    params.delete('bust');
+    if (action === 'bust') params.delete('action');
+    const rest = params.toString();
+    history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : ''));
+    Promise.all([
+      'caches' in window ? caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))) : Promise.resolve(),
+      'serviceWorker' in navigator ? navigator.serviceWorker.getRegistrations().then((regs) => Promise.all(regs.map((r) => r.unregister()))) : Promise.resolve()
+    ]).then(() => {
+      window.location.replace('/?updated=' + Date.now());
+    }).catch(() => {
+      window.location.replace('/?updated=' + Date.now());
+    });
+    return;
+  }
+
+  if (updated) {
+    params.delete('updated');
+    const rest = params.toString();
+    history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : ''));
+    toast('Plate updated to latest version');
+  }
+
+  if (!action) return;
+
+  params.delete('action');
+  const rest = params.toString();
+  history.replaceState(history.state, '', location.pathname + (rest ? `?${rest}` : ''));
+
+  if (action === 'bite') {
+    track('shortcut_opened', { action: 'bite' });
+    const dialog = $('quick-custom-dialog');
+    if (dialog) {
+      dialog.hidden = false;
+      $('quick-name')?.focus();
+    }
+  } else if (action === 'scan') {
+    track('shortcut_opened', { action: 'scan' });
+    $('add-barcode')?.click();
+  }
 }
 
 /**
@@ -2075,5 +3060,49 @@ function inviteFromUrl() {
 })();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+      reg.update().catch(() => {});
+
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        location.reload();
+      });
+
+      // Prompt if an updated worker is waiting or installed
+      const promptUpdate = (worker) => {
+        toast('New version available', () => {
+          worker.postMessage({ type: 'SKIP_WAITING' });
+          location.reload();
+        });
+      };
+
+      if (reg.waiting) {
+        promptUpdate(reg.waiting);
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            promptUpdate(newWorker);
+          }
+        });
+      });
+
+      // Check for updates whenever the app is brought to foreground
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          reg.update().catch(() => {});
+          loadDay().catch(() => {});
+        }
+      });
+    } catch (e) {
+      console.warn('SW register error:', e);
+    }
+  });
 }

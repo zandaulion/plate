@@ -12,5 +12,21 @@
     { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icons/maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" },
     { "src": "/icons/monochrome.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "monochrome" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Log Quick Bite",
+      "short_name": "Quick Bite",
+      "description": "Log a quick bite or snack with 1 tap",
+      "url": "/?action=bite",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Scan Barcode",
+      "short_name": "Scan",
+      "description": "Scan a food barcode",
+      "url": "/?action=scan",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any" }]
+    }
   ]
 }

@@ -1,8 +1,104 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Plate">
-  <rect width="512" height="512" rx="112" fill="#12140F"/>
-  <rect x="148" y="168" width="56" height="138" rx="28" fill="#7CC79E"/>
-  <rect x="228" y="138" width="56" height="168" rx="28" fill="#E0B45F"/>
-  <rect x="308" y="108" width="56" height="198" rx="28" fill="#B79BD4"/>
-  <rect x="148" y="250" width="216" height="56" rx="28" fill="#CFD8CC"/>
-  <rect x="228" y="278" width="56" height="136" rx="28" fill="#CFD8CC"/>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18261C"/>
+      <stop offset="60%" stop-color="#101A13"/>
+      <stop offset="100%" stop-color="#0A100C"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#284230" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#18261C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="plate-rim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E8E3D8"/>
+    </linearGradient>
+    <linearGradient id="plate-inner" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F5F2EA"/>
+    </linearGradient>
+    <linearGradient id="dino-skin" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ADE80"/>
+      <stop offset="100%" stop-color="#16A34A"/>
+    </linearGradient>
+    <linearGradient id="p-dot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="c-dot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="f-dot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#halo)"/>
+
+  <!-- Warm Wooden Table Edge at bottom -->
+  <path d="M 0 410 L 512 410 L 512 512 L 0 512 Z" fill="#241B14" opacity="0.85"/>
+  <line x1="0" y1="410" x2="512" y2="410" stroke="#3D2E22" stroke-width="3"/>
+
+  <!-- Platosaurus Peeking -->
+  <g transform="translate(16, 8)">
+    <!-- Back amber spines -->
+    <path d="M 170 170 Q 145 180 165 210 Q 140 225 160 255 Q 142 275 162 305" fill="none" stroke="#F59E0B" stroke-width="16" stroke-linecap="round"/>
+
+    <!-- Head & long curved neck -->
+    <path d="M 185 350 C 180 270 180 180 230 120 C 275 68 360 74 385 130 C 410 180 390 235 340 248 C 305 258 285 300 280 350 Z" fill="url(#dino-skin)"/>
+
+    <!-- Light green belly/chest contour -->
+    <path d="M 255 190 C 280 175 330 175 340 215 C 310 230 285 285 280 350 C 265 350 255 310 255 190 Z" fill="#86EFAC" opacity="0.6"/>
+
+    <!-- Rosy Cheek -->
+    <ellipse cx="330" cy="180" rx="18" ry="12" fill="#FB7185" opacity="0.5"/>
+
+    <!-- Big shiny eye -->
+    <ellipse cx="305" cy="138" rx="17" ry="23" fill="#0F1711"/>
+    <circle cx="312" cy="128" r="7.5" fill="#FFFFFF"/>
+    <circle cx="298" cy="148" r="3.5" fill="#FFFFFF"/>
+
+    <!-- Cheerful smile -->
+    <path d="M 338 170 Q 355 188 370 166" fill="none" stroke="#0F1711" stroke-width="8" stroke-linecap="round"/>
+
+    <!-- White dining bib -->
+    <path d="M 235 255 C 235 255 275 270 315 245 C 330 295 290 325 245 315 Z" fill="#FFFFFF" stroke="#D1D5DB" stroke-width="5"/>
+    <circle cx="280" cy="285" r="11" fill="#EF4444"/>
+    <path d="M 280 274 Q 284 266 288 270" fill="none" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- Arm holding wooden fork -->
+    <path d="M 235 295 Q 205 280 195 315" fill="none" stroke="#15803D" stroke-width="17" stroke-linecap="round"/>
+    <g transform="rotate(-20 185 290)">
+      <rect x="180" y="270" width="13" height="65" rx="6.5" fill="#D97706"/>
+      <path d="M 172 270 L 172 245 M 184 270 L 184 240 M 196 270 L 196 245" stroke="#D97706" stroke-width="5.5" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Plate Drop Shadow on Table -->
+  <ellipse cx="256" cy="425" rx="195" ry="32" fill="#000000" opacity="0.45"/>
+
+  <!-- CRISP CERAMIC WHITE PLATE (High Contrast!) -->
+  <!-- Outer plate rim -->
+  <ellipse cx="256" cy="385" rx="205" ry="85" fill="url(#plate-rim)" stroke="#D4CDC0" stroke-width="5"/>
+  <!-- Inner plate well -->
+  <ellipse cx="256" cy="390" rx="165" ry="60" fill="url(#plate-inner)" stroke="#E5DFD3" stroke-width="3"/>
+  <!-- Inner rim highlight -->
+  <path d="M 100 380 Q 256 425 412 380" fill="none" stroke="#FFFFFF" stroke-width="3" opacity="0.8"/>
+
+  <!-- Three glowing macro food gems -->
+  <!-- Protein (fresh mint emerald) -->
+  <ellipse cx="180" cy="385" rx="20" ry="14" fill="url(#p-dot)"/>
+  <ellipse cx="177" cy="381" rx="7" ry="4" fill="#FFFFFF" opacity="0.85"/>
+
+  <!-- Carbs (golden sweet honey) -->
+  <ellipse cx="256" cy="402" rx="22" ry="15" fill="url(#c-dot)"/>
+  <ellipse cx="253" cy="398" rx="8" ry="4" fill="#FFFFFF" opacity="0.85"/>
+
+  <!-- Fat (sweet berry violet) -->
+  <ellipse cx="332" cy="385" rx="20" ry="14" fill="url(#f-dot)"/>
+  <ellipse cx="329" cy="381" rx="7" ry="4" fill="#FFFFFF" opacity="0.85"/>
 </svg>

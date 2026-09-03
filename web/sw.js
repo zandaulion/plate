@@ -1,48 +1,57 @@
-// Cache-first for the shell, network-only for the API.
-//
-// CACHE_NAME must be bumped on every shell change, or installed clients keep
-// serving the old build indefinitely.
-const CACHE_NAME = 'plate-v41';
+const CACHE_NAME = 'plate-v69';
 
-const SHELL = [
-  '/', '/index.html', '/app.css', '/app.js', '/track.js',
-  '/core/analysis/estimate.js', '/core/analysis/prompt.js',
-  '/core/nutrition.js', '/core/day.js', '/core/foods.js',
-  '/core/weight.js', '/core/expenditure.js',
-  '/manifest.webmanifest', '/icons/icon.svg', '/icons/maskable.svg'
-];
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+});
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => {
+      // Wipe ALL old caches unconditionally
+      return Promise.all(keys.map((k) => caches.delete(k)));
+    }).then(() => self.clients.claim()).then(() => {
+      // Force reload all open windows with update query param
+      return self.clients.matchAll({ type: 'window' }).then((clients) => {
+        for (const client of clients) {
+          if (client.navigate) {
+            client.navigate('/?updated=' + Date.now());
+          }
+        }
+      });
+    })
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
+self.addEventListener('fetch', (e) => {
+  const url = new URL(e.request.url);
 
-  // Never cache the API. A stale day total is worse than no day total, and
-  // photos are already immutable-cached by the browser from their headers.
-  if (url.pathname.startsWith('/api/')) return;
+  // Never intercept /bust, API requests, or non-GET requests
+  if (url.pathname === '/bust' || url.pathname.startsWith('/api/') || e.request.method !== 'GET') {
+    return;
+  }
 
-  event.respondWith(
-    caches.match(event.request).then((hit) => hit || fetch(event.request).then((res) => {
-      if (res.ok && res.type === 'basic') {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(event.request, copy));
-      }
-      return res;
-    }).catch(() => caches.match('/index.html')))
+  // Network-first for EVERYTHING: Always get latest from server if online, fallback to cache only if offline
+  e.respondWith(
+    fetch(e.request, { cache: 'no-cache' })
+      .then((networkRes) => {
+        if (networkRes.ok) {
+          const clone = networkRes.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return networkRes;
+      })
+      .catch(() => {
+        return caches.match(e.request).then((cached) => {
+          if (cached) return cached;
+          if (e.request.mode === 'navigate') return caches.match('/index.html');
+          return new Response('Offline', { status: 503, statusText: 'Offline' });
+        });
+      })
   );
 });

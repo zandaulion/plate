@@ -37,7 +37,19 @@
 
   <header class="topbar">
     <button id="prev-day" class="icon-btn" aria-label="Previous day">&#8249;</button>
-    <button id="day-label" class="day-label" aria-live="polite">Today</button>
+    <button id="day-label" class="day-label" aria-live="polite">
+      <div class="day-label-row">
+        <span id="day-label-text">Today</span>
+        <span class="day-compact-sep">•</span>
+        <span class="day-compact-kcal"><span id="day-compact-kcal">0</span><small>kcal</small></span>
+      </div>
+      <div id="day-compact-tracker" class="day-compact-tracker">
+        <span class="day-compact-macro p"><small>P</small><span id="day-compact-p">0</span></span>
+        <span class="day-compact-macro c"><small>C</small><span id="day-compact-c">0</span></span>
+        <span class="day-compact-macro f"><small>F</small><span id="day-compact-f">0</span></span>
+        <span class="day-compact-macro fib"><small>Fib</small><span id="day-compact-fib">0</span></span>
+      </div>
+    </button>
     <button id="next-day" class="icon-btn" aria-label="Next day">&#8250;</button>
     <button id="open-profile" class="icon-btn profile-btn" aria-label="You">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"
@@ -55,6 +67,7 @@
         <path d="M19.05 15a1.6 1.6 0 0 0 .32 1.77l.06.06a1.94 1.94 0 1 1-2.74 2.74l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.94 1.94 0 1 1-3.88 0v-.09a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.77.32l-.06.06A1.94 1.94 0 1 1 4.39 16.9l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97h-.17a1.94 1.94 0 1 1 0-3.88h.09a1.6 1.6 0 0 0 1.47-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06A1.94 1.94 0 1 1 7.05 4.39l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.94 1.94 0 1 1 3.88 0v.09a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a1.94 1.94 0 1 1 2.74 2.74l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.47.97h.17a1.94 1.94 0 1 1 0 3.88h-.09a1.6 1.6 0 0 0-1.47.97Z"/>
       </svg>
     </button>
+    <div id="topbar-split" class="topbar-split" role="img" aria-label="Macronutrient split"></div>
   </header>
 
   <main id="day-view" class="view">
@@ -63,37 +76,78 @@
          data, because at that point the profile no longer feeds it. -->
     <section id="profile-banner" class="banner" hidden></section>
 
-    <section class="totals" aria-labelledby="totals-heading">
-      <h2 id="totals-heading" class="sr-only">Day total</h2>
-      <button id="open-trends" class="totals-more" type="button">
-        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 18V9M9.3 18V5M14.7 18v-6M20 18v-9"/>
-        </svg>
-        <span>Trends</span>
-      </button>
-      <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>
-      <div id="maintenance" class="maintenance"></div>
-      <div id="split" class="split" role="img" aria-label="Macronutrient split"></div>
-      <dl id="macros" class="macros"></dl>
+    <!-- Platosaurus Mascot Companion Card -->
+    <section id="plato-card" class="plato-card" role="button" tabindex="0" aria-label="Platosaurus companion, tap to chat">
+      <div id="plato-avatar" class="plato-avatar-btn" aria-hidden="true">
+        <div id="plato-svg-wrap" class="plato-svg-wrap"></div>
+      </div>
+      <div class="plato-bubble">
+        <div class="plato-bubble-tail"></div>
+        <div class="plato-head">
+          <span class="plato-badge">Platosaurus</span>
+          <span id="plato-action-hint" class="plato-hint">Tap me!</span>
+        </div>
+        <p id="plato-speech" class="plato-speech">Rawr! What are we eating today?</p>
+        <div id="plato-actions" class="plato-actions" hidden></div>
+      </div>
     </section>
 
-    <!-- Weight is a daily action and the input the expenditure estimate needs,
-         so it sits on the screen people already open rather than inside
-         settings. It asks while there is nothing for the day, and reports once
-         there is. -->
-    <section id="weigh" class="weigh" hidden></section>
+    <div id="day-cards" class="day-cards">
+      <section class="totals" aria-labelledby="totals-heading">
+        <h2 id="totals-heading" class="sr-only">Day total</h2>
+        <button id="open-trends" class="totals-more" type="button">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 18V9M9.3 18V5M14.7 18v-6M20 18v-9"/>
+          </svg>
+          <span>Trends</span>
+        </button>
+        <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>
+        <div id="maintenance" class="maintenance"></div>
+        <div id="split" class="split" role="img" aria-label="Macronutrient split"></div>
+        <dl id="macros" class="macros"></dl>
+      </section>
 
-    <section aria-labelledby="entries-heading">
-      <h2 id="entries-heading" class="section-head">Meals</h2>
-      <ul id="entries" class="entries"></ul>
-      <p id="empty-day" class="empty" hidden>Nothing logged yet.</p>
-    </section>
+      <!-- Weight is a daily action and the input the expenditure estimate needs,
+           so it sits on the screen people already open rather than inside
+           settings. It asks while there is nothing for the day, and reports once
+           there is. -->
+      <section id="weigh" class="weigh" hidden></section>
+
+      <!-- Quick bite / grazing tray for zero-friction in-the-moment logging -->
+      <section class="quick-bite-tray" id="quick-bite-tray" aria-label="Grazing and quick bites">
+        <div class="quick-bite-head">
+          <span class="quick-bite-title">Grazing &amp; Quick bites</span>
+          <button id="quick-custom-btn" class="quick-custom-link" type="button">+ Custom</button>
+        </div>
+        <div class="quick-bite-scroll" id="quick-bite-chips"></div>
+      </section>
+
+      <!-- Inline custom bite drawer / form -->
+      <div id="quick-custom-dialog" class="quick-custom-dialog" hidden>
+        <form id="quick-custom-form" class="quick-custom-form">
+          <div class="quick-custom-inputs">
+            <input id="quick-name" type="text" placeholder="What did you bite?" autocomplete="off">
+            <div class="quick-custom-row">
+              <input id="quick-kcal" type="number" inputmode="numeric" min="1" max="2000" placeholder="Calories (kcal)" required>
+              <input id="quick-grams" type="number" inputmode="numeric" min="1" max="1000" placeholder="Grams (optional)">
+            </div>
+          </div>
+          <div class="quick-custom-actions">
+            <button class="primary" type="submit">Log snack</button>
+            <button id="quick-custom-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <section aria-labelledby="entries-heading">
+        <h2 id="entries-heading" class="section-head">Meals</h2>
+        <ul id="entries" class="entries"></ul>
+        <p id="empty-day" class="empty" hidden>Nothing logged yet.</p>
+      </section>
+    </div>
   </main>
 
-  <!-- Three named ways in, all one tap from the day view. They were previously
-       a camera button plus a magnifier, with barcode and manual entry buried
-       two levels inside the sheet. -->
   <nav class="actions" aria-label="Add food">
     <button id="add-manual" class="action" type="button">
       <svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23">
@@ -219,10 +273,26 @@
               <label for="m-protein">Protein<input id="m-protein" type="number" inputmode="decimal" min="0" step="0.1"></label>
               <label for="m-fat">Fat<input id="m-fat" type="number" inputmode="decimal" min="0" step="0.1"></label>
               <label for="m-carbs">Carbs<input id="m-carbs" type="number" inputmode="decimal" min="0" step="0.1"></label>
+              <label for="m-fiber">Fiber<input id="m-fiber" type="number" inputmode="decimal" min="0" step="0.1"></label>
             </div>
 
             <p id="manual-warn" class="hint warn-text" hidden></p>
             <button id="m-add" class="secondary" type="button">Add it</button>
+          </div>
+        </section>
+
+        <!-- Catch-up grazing items eaten prior to this meal -->
+        <section id="grazing-catchup" class="grazing-catchup">
+          <button id="grazing-toggle" class="link-btn grazing-toggle" type="button" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <polyline points="12 7 12 12 15 15"/>
+            </svg>
+            <span>Any grazing before this meal?</span>
+          </button>
+          <div id="grazing-panel" class="grazing-panel" hidden>
+            <p class="hint">Tap to include recent snacks or rough bites with this entry.</p>
+            <div id="grazing-chips" class="chips grazing-chips"></div>
           </div>
         </section>
 
@@ -299,6 +369,24 @@
 
         <label for="p-activity">Typical week
           <select id="p-activity"></select></label>
+
+        <div class="field-row">
+          <label for="p-diet">Diet
+            <select id="p-diet">
+              <option value="omnivore">Omnivore</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="vegan">Vegan</option>
+              <option value="pescatarian">Pescatarian</option>
+              <option value="keto">Keto</option>
+            </select></label>
+          <label for="p-goal">Focus
+            <select id="p-goal">
+              <option value="balanced">Balanced</option>
+              <option value="high_protein">High protein</option>
+              <option value="low_fat">Low fat</option>
+              <option value="low_carb">Low carb</option>
+            </select></label>
+        </div>
 
         <div id="profile-result" class="maintenance"></div>
         <button class="primary" type="submit">Save</button>

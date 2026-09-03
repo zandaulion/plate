@@ -1,10 +1,37 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Plate">
-  <rect width="512" height="512" fill="#12140F"/>
-  <g transform="translate(256 256) scale(0.66) translate(-256 -256)">
-    <rect x="148" y="168" width="56" height="138" rx="28" fill="#CFD8CC"/>
-    <rect x="228" y="138" width="56" height="168" rx="28" fill="#CFD8CC"/>
-    <rect x="308" y="108" width="56" height="198" rx="28" fill="#CFD8CC"/>
-    <rect x="148" y="250" width="216" height="56" rx="28" fill="#CFD8CC"/>
-    <rect x="228" y="278" width="56" height="136" rx="28" fill="#CFD8CC"/>
+  <g transform="translate(256 256) scale(0.76) translate(-256 -256)">
+    <!-- Table line -->
+    <line x1="-30" y1="410" x2="542" y2="410" stroke="#FFFFFF" stroke-width="4" opacity="0.4"/>
+
+    <!-- Platosaurus Peeking -->
+    <g transform="translate(16, 8)">
+      <!-- Back spines -->
+      <path d="M 170 170 Q 145 180 165 210 Q 140 225 160 255 Q 142 275 162 305" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" opacity="0.6"/>
+
+      <!-- Head & neck -->
+      <path d="M 185 350 C 180 270 180 180 230 120 C 275 68 360 74 385 130 C 410 180 390 235 340 248 C 305 258 285 300 280 350 Z" fill="#FFFFFF" opacity="0.9"/>
+
+      <!-- Eye cut-out -->
+      <ellipse cx="305" cy="138" rx="17" ry="23" fill="#000000"/>
+      <circle cx="312" cy="128" r="7.5" fill="#FFFFFF"/>
+
+      <!-- Smile -->
+      <path d="M 338 170 Q 355 188 370 166" fill="none" stroke="#000000" stroke-width="7" stroke-linecap="round"/>
+
+      <!-- Fork -->
+      <g transform="rotate(-20 185 290)">
+        <rect x="180" y="270" width="13" height="65" rx="6.5" fill="#FFFFFF"/>
+        <path d="M 172 270 L 172 245 M 184 270 L 184 240 M 196 270 L 196 245" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round"/>
+      </g>
+    </g>
+
+    <!-- Ceramic Plate in Foreground -->
+    <ellipse cx="256" cy="385" rx="205" ry="85" fill="#FFFFFF"/>
+    <ellipse cx="256" cy="390" rx="165" ry="60" fill="#000000" opacity="0.08"/>
+
+    <!-- Three macro gems -->
+    <ellipse cx="180" cy="385" rx="20" ry="14" fill="#000000" opacity="0.5"/>
+    <ellipse cx="256" cy="402" rx="22" ry="15" fill="#000000" opacity="0.6"/>
+    <ellipse cx="332" cy="385" rx="20" ry="14" fill="#000000" opacity="0.5"/>
   </g>
 </svg>
