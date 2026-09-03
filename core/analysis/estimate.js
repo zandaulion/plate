@@ -21,7 +21,7 @@
 // grams has to rescale the nutrition, and that only works if the rate is what
 // is persisted.
 
-const NUTRIENTS = ['calories', 'protein', 'fat', 'carbs'];
+const NUTRIENTS = ['calories', 'protein', 'fat', 'carbs', 'fiber'];
 
 /**
  * Median absolute percentage error, measured. Used to draw the range shown
@@ -45,9 +45,9 @@ const NUTRIENTS = ['calories', 'protein', 'fat', 'carbs'];
  * only a scale delivers.
  */
 export const ERROR_BANDS = {
-  model:     { calories: 0.30, protein: 0.25, carbs: 0.28, fat: 0.42 },
-  estimated: { calories: 0.23, protein: 0.23, carbs: 0.23, fat: 0.36 },
-  weighed:   { calories: 0.16, protein: 0.15, carbs: 0.16, fat: 0.33 }
+  model:     { calories: 0.30, protein: 0.25, carbs: 0.28, fat: 0.42, fiber: 0.28 },
+  estimated: { calories: 0.23, protein: 0.23, carbs: 0.23, fat: 0.36, fiber: 0.23 },
+  weighed:   { calories: 0.16, protein: 0.15, carbs: 0.16, fat: 0.33, fiber: 0.16 }
 };
 
 /** How the weight in this estimate was arrived at. */
@@ -64,7 +64,7 @@ export function portionSourceOf(estimate) {
   return estimate?.portionConfirmed ? 'estimated' : 'model';
 }
 
-export const CONFIDENCE = { calories: 'medium', protein: 'medium', carbs: 'medium', fat: 'low' };
+export const CONFIDENCE = { calories: 'medium', protein: 'medium', carbs: 'medium', fat: 'low', fiber: 'medium' };
 
 const round = (n, dp = 1) => {
   const f = 10 ** dp;
@@ -98,7 +98,8 @@ export function fromModelResponse(raw) {
       calories: safeRate(it?.calories, grams),
       protein: safeRate(it?.protein_g ?? it?.protein, grams),
       fat: safeRate(it?.fat_g ?? it?.fat, grams),
-      carbs: safeRate(it?.carbs_g ?? it?.carbs, grams)
+      carbs: safeRate(it?.carbs_g ?? it?.carbs, grams),
+      fiber: safeRate(it?.fiber_g ?? it?.fiber, grams)
     };
 
     items.push({ id: nextId(), name, grams: round(grams, 0), per, source: 'photo' });
@@ -126,10 +127,10 @@ export function itemMacros(item) {
 }
 
 export function totalsOf(estimate) {
-  const t = { calories: 0, protein: 0, fat: 0, carbs: 0, grams: 0 };
+  const t = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, grams: 0 };
   for (const item of estimate?.items || []) {
     const m = itemMacros(item);
-    for (const n of NUTRIENTS) t[n] += m[n];
+    for (const n of NUTRIENTS) t[n] += m[n] || 0;
     t.grams += item.grams || 0;
   }
   for (const k of Object.keys(t)) t[k] = round(t[k], k === 'calories' || k === 'grams' ? 0 : 1);
@@ -152,12 +153,12 @@ export function rangesOf(estimate) {
   const items = estimate?.items || [];
   const band = ERROR_BANDS[portionSourceOf(estimate)] || ERROR_BANDS.model;
 
-  const photo = { calories: 0, protein: 0, fat: 0, carbs: 0 };
-  const exact = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+  const photo = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
+  const exact = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
   for (const item of items) {
     const target = item.source === 'photo' ? photo : exact;
     const m = itemMacros(item);
-    for (const n of NUTRIENTS) target[n] += m[n];
+    for (const n of NUTRIENTS) target[n] += m[n] || 0;
   }
 
   const out = {};

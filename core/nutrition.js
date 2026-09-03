@@ -90,9 +90,9 @@ export function missingForMaintenance(profile) {
   });
 }
 
-/** Sum a list of {calories, protein, fat, carbs} into one total. */
+/** Sum a list of {calories, protein, fat, carbs, fiber} into one total. */
 export function sumMacros(rows) {
-  const t = { calories: 0, protein: 0, fat: 0, carbs: 0 };
+  const t = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
   for (const r of rows || []) {
     for (const k of Object.keys(t)) {
       const v = Number(r?.[k]);

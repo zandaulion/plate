@@ -33,6 +33,9 @@ export const EVENTS = [
   'scan_start', 'scan_ok', 'scan_fail', 'scan_cancel', 'scan_typed',
   'manual_open', 'manual_add', 'manual_warned',
 
+  // Grazing & micro-intake fast paths.
+  'quick_bite_logged', 'grazing_catchup_added', 'shortcut_opened',
+
   // Weighing, which the expenditure estimate depends on.
   'weigh_prompt_shown', 'weigh_dismissed', 'weigh_open', 'weigh_saved', 'weigh_backfill',
 

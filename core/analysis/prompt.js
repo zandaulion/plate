@@ -25,9 +25,10 @@ export const RESPONSE_SCHEMA = {
           calories: { type: 'NUMBER' },
           protein_g: { type: 'NUMBER' },
           fat_g: { type: 'NUMBER' },
-          carbs_g: { type: 'NUMBER' }
+          carbs_g: { type: 'NUMBER' },
+          fiber_g: { type: 'NUMBER' }
         },
-        required: ['name', 'grams', 'calories', 'protein_g', 'fat_g', 'carbs_g']
+        required: ['name', 'grams', 'calories', 'protein_g', 'fat_g', 'carbs_g', 'fiber_g']
       }
     }
   },
@@ -40,7 +41,7 @@ List every distinct food and drink you can see. For each one give:
   - a short plain name, as a person would say it ("chicken breast", "white rice",
     "olive oil dressing"), without brand names or cooking adjectives
   - the weight in grams of that item as served in this photo
-  - the calories, protein, fat and carbohydrate for that weight
+  - the calories, protein, fat, carbohydrate and dietary fiber for that weight
 
 Rules:
   - Report what is actually in the photo, for the whole portion shown. Not per

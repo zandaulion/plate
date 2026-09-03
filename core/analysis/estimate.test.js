@@ -10,8 +10,8 @@ const RESPONSE = {
   is_food: true,
   note: '',
   items: [
-    { name: 'chicken breast', grams: 150, calories: 248, protein_g: 46.5, fat_g: 5.4, carbs_g: 0 },
-    { name: 'white rice', grams: 200, calories: 260, protein_g: 5.4, fat_g: 0.6, carbs_g: 56 }
+    { name: 'chicken breast', grams: 150, calories: 248, protein_g: 46.5, fat_g: 5.4, carbs_g: 0, fiber_g: 0 },
+    { name: 'white rice', grams: 200, calories: 260, protein_g: 5.4, fat_g: 0.6, carbs_g: 56, fiber_g: 0.8 }
   ]
 };
 
@@ -28,6 +28,7 @@ test('totals match the model response before any edit', () => {
   assert.equal(t.calories, 508);
   assert.equal(t.grams, 350);
   assert.equal(t.protein, 51.9);
+  assert.equal(t.fiber, 0.8);
 });
 
 test('editing one weight rescales only that item', () => {
@@ -141,11 +142,12 @@ test('a negative or non-numeric weight edit is ignored', () => {
 test('manual items take per-100g rates, as labels state them', () => {
   const e = addManualItem(fromModelResponse({ items: [] }), {
     name: 'olive oil', grams: 15,
-    per100: { calories: 884, protein: 0, fat: 100, carbs: 0 }
+    per100: { calories: 884, protein: 0, fat: 100, carbs: 0, fiber: 0 }
   });
   const t = totalsOf(e);
   assert.equal(t.calories, 133); // 884 * 0.15
   assert.equal(t.fat, 15);
+  assert.equal(t.fiber, 0);
 });
 
 test('removeItem drops exactly one item', () => {

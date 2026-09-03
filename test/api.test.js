@@ -70,16 +70,25 @@ test('profile round-trips and yields a maintenance band', async () => {
   const { auth } = await registerDevice();
   const res = await api('/api/profile', {
     method: 'PUT', headers: auth,
-    body: JSON.stringify({ weightKg: 80, heightCm: 180, ageYears: 30, sex: 'male', activity: 'moderate' })
+    body: JSON.stringify({
+      weightKg: 80, heightCm: 180, ageYears: 30, sex: 'male', activity: 'moderate',
+      diet: 'vegetarian', dietaryGoal: 'high_protein'
+    })
   });
   assert.equal(res.status, 200);
 
-  const { maintenance } = await res.json();
+  const { maintenance, profile } = await res.json();
   assert.equal(maintenance.kcal, Math.round(1780 * 1.55));
   assert.ok(maintenance.low < maintenance.kcal && maintenance.kcal < maintenance.high);
+  assert.equal(profile.diet, 'vegetarian');
+  assert.equal(profile.dietaryGoal, 'high_protein');
 
   const me = await (await api('/api/me', { headers: auth })).json();
   assert.equal(me.profile.weightKg, 80);
+  assert.equal(me.profile.diet, 'vegetarian');
+  assert.equal(me.profile.dietaryGoal, 'high_protein');
+  assert.ok(Array.isArray(me.diets));
+  assert.ok(Array.isArray(me.dietaryGoals));
 });
 
 test('an impossible profile is rejected, not clamped', async () => {
@@ -95,8 +104,8 @@ test('an impossible profile is rejected, not clamped', async () => {
 test('entries save, list and total correctly', async () => {
   const { auth } = await registerDevice();
   const items = [
-    { name: 'chicken', grams: 150, per: { calories: 1.65, protein: 0.31, fat: 0.036, carbs: 0 } },
-    { name: 'rice', grams: 200, per: { calories: 1.3, protein: 0.027, fat: 0.003, carbs: 0.28 } }
+    { name: 'chicken', grams: 150, per: { calories: 1.65, protein: 0.31, fat: 0.036, carbs: 0, fiber: 0 } },
+    { name: 'rice', grams: 200, per: { calories: 1.3, protein: 0.027, fat: 0.003, carbs: 0.28, fiber: 0.004 } }
   ];
 
   const created = await api('/api/entries', {
@@ -109,6 +118,7 @@ test('entries save, list and total correctly', async () => {
   const day = await (await api('/api/entries?day=2026-08-30', { headers: auth })).json();
   assert.equal(day.entries.length, 1);
   assert.equal(day.summary.totals.calories, 508);
+  assert.equal(day.summary.totals.fiber, 0.8);
   assert.equal(day.summary.byMeal.lunch.count, 1);
   assert.ok(day.split.protein > 0, 'macro split is computed for the day');
 });
@@ -1150,7 +1160,7 @@ test('a cached barcode is refreshed once it goes stale', async () => {
   const { lookupBarcode } = await import('../server/foods.js');
 
   // Seed the cache directly with an old row and no network involved.
-  const barcode = '8888888888888';
+  const barcode = '0000000000001';
   db.prepare(`
     INSERT INTO food_cache (id, barcode, name, source, per100_json, serving_g, fetched_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1536,4 +1546,86 @@ test('a photo cannot be read again beyond the cap', async () => {
   // The count travels with the entry, so the app can withdraw the offer.
   const day = await (await api('/api/entries?day=2026-08-23', { headers: auth })).json();
   assert.equal(day.entries[0].corrections, MAX_CORRECTIONS);
+});
+
+test('quick bite presets save as snack entries and total correctly into the day', async () => {
+  const { QUICK_BITES, createQuickBiteItem } = await import('../core/foods.js');
+  const { auth } = await registerDevice();
+  const day = '2026-08-24';
+
+  const item = createQuickBiteItem(QUICK_BITES[1]); // ~100 kcal
+  const res = await api('/api/entries', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({
+      day,
+      meal: 'snack',
+      items: [{
+        name: item.name,
+        grams: item.grams,
+        source: 'manual',
+        per: {
+          calories: item.per100.calories / 100,
+          protein: item.per100.protein / 100,
+          fat: item.per100.fat / 100,
+          carbs: item.per100.carbs / 100
+        }
+      }],
+      portionSource: 'estimated',
+      portionConfirmed: true,
+      note: 'Quick bite'
+    })
+  });
+  assert.equal(res.status, 201);
+  const entry = await res.json();
+  assert.ok(entry.id);
+
+  const dayData = await (await api(`/api/entries?day=${day}`, { headers: auth })).json();
+  assert.equal(dayData.entries.length, 1);
+  assert.equal(dayData.entries[0].meal, 'snack');
+  assert.ok(Math.abs(dayData.summary.totals.calories - 100) < 2);
+
+  // Undo (delete) works cleanly
+  const delRes = await api(`/api/entries/${entry.id}`, { method: 'DELETE', headers: auth });
+  assert.equal(delRes.status, 200);
+
+  const dayAfter = await (await api(`/api/entries?day=${day}`, { headers: auth })).json();
+  assert.equal(dayAfter.entries.length, 0);
+  assert.equal(dayAfter.summary.totals.calories, 0);
+});
+
+test('quick bite and grazing events validate and record in event stream', async () => {
+  const { auth } = await registerDevice();
+  const { accountId } = await (await api('/api/me', { headers: auth })).json();
+
+  // Enable tracking
+  await api(`/api/admin/accounts/${accountId}/tracking`, {
+    method: 'POST', headers: { 'X-Admin': '1' }, body: JSON.stringify({ enabled: true })
+  });
+
+  const res = await api('/api/events', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({
+      events: [
+        { name: 'quick_bite_logged', at: new Date().toISOString(), session: 's1', props: { name: 'Handful', calories: 100 } },
+        { name: 'grazing_catchup_added', at: new Date().toISOString(), session: 's1', props: { count: 2 } },
+        { name: 'shortcut_opened', at: new Date().toISOString(), session: 's1', props: { action: 'bite' } }
+      ]
+    })
+  });
+  assert.equal(res.status, 200);
+
+  const usage = await (await api('/api/usage?days=7', { headers: auth })).json();
+  assert.ok(usage.interaction.events > 0);
+});
+
+test('/bust endpoint returns no-cache headers and clear-site-data', async () => {
+  const res = await api('/bust');
+  assert.equal(res.status, 200);
+  assert.ok(res.headers.get('clear-site-data')?.includes('cache'));
+  assert.ok(res.headers.get('cache-control')?.includes('no-store'));
+  const html = await res.text();
+  assert.ok(html.includes('Updating Plate'));
+  assert.ok(html.includes('caches.delete'));
 });

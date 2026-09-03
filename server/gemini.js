@@ -7,7 +7,7 @@ import { buildPrompt, RESPONSE_SCHEMA } from '../core/analysis/prompt.js';
 
 const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-export const getModel = () => (process.env.GEMINI_MODEL || 'gemini-3.7-flash').trim();
+export const getModel = () => (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
 const getKey = () => (process.env.GEMINI_API_KEY || '').trim();
 
 export const isConfigured = () => Boolean(getKey());

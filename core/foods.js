@@ -45,6 +45,9 @@ export function isPlausible(per100) {
   for (const macro of [protein, fat, carbs]) {
     if (!Number.isFinite(macro) || macro < 0 || macro > 100) return false;
   }
+  if (per100.fiber !== undefined && per100.fiber !== null) {
+    if (!Number.isFinite(per100.fiber) || per100.fiber < 0 || per100.fiber > 100) return false;
+  }
   if (protein + fat + carbs > MACRO_TOLERANCE) return false;
 
   // A record whose macros imply an impossible energy is broken even when the
@@ -90,7 +93,8 @@ export function fromOpenFoodFacts(product) {
     // reports every packaged food as containing no protein.
     protein: num(n.proteins_100g) ?? 0,
     fat: num(n.fat_100g) ?? 0,
-    carbs: num(n.carbohydrates_100g) ?? 0
+    carbs: num(n.carbohydrates_100g) ?? 0,
+    fiber: num(n.fiber_100g) ?? num(n.fiber) ?? 0
   };
   if (!isPlausible(per100)) return null;
 
@@ -122,7 +126,7 @@ export function parseServing(text) {
   return Number.isFinite(grams) && grams > 0 && grams < 5000 ? Math.round(grams) : null;
 }
 
-const USDA_NUTRIENTS = { 1008: 'calories', 1003: 'protein', 1004: 'fat', 1005: 'carbs' };
+const USDA_NUTRIENTS = { 1008: 'calories', 1003: 'protein', 1004: 'fat', 1005: 'carbs', 1079: 'fiber' };
 
 /**
  * USDA FoodData Central record -> common shape.
@@ -131,7 +135,7 @@ const USDA_NUTRIENTS = { 1008: 'calories', 1003: 'protein', 1004: 'fat', 1005: '
 export function fromUsda(food) {
   if (!food || typeof food !== 'object') return null;
 
-  const per100 = { calories: null, protein: 0, fat: 0, carbs: 0 };
+  const per100 = { calories: null, protein: 0, fat: 0, carbs: 0, fiber: 0 };
   for (const row of food.foodNutrients || []) {
     const key = USDA_NUTRIENTS[row.nutrientId ?? row.nutrient?.id];
     if (!key) continue;
@@ -147,7 +151,8 @@ export function fromUsda(food) {
     calories: Math.round(per100.calories * 10) / 10,
     protein: per100.protein,
     fat: per100.fat,
-    carbs: per100.carbs
+    carbs: per100.carbs,
+    fiber: per100.fiber
   };
   if (!isPlausible(rounded)) return null;
 
@@ -311,4 +316,60 @@ export function summariseRecent(rows, { now = Date.now(), limit = 12 } = {}) {
 
   scored.sort((a, b) => b.score - a.score || b.lastUsed - a.lastUsed);
   return scored.slice(0, limit).map(({ score, ...rest }) => rest);
+}
+
+/**
+ * Standard generic presets for micro-intake / grazing when the exact food
+ * item or portion is unknown.
+ *
+ * Uses an honest standard snack macro split (~15% protein, 40% fat, 45% carbs)
+ * so calories and macros are captured for energy expenditure calculation.
+ */
+export const QUICK_BITES = [
+  { id: 'bite-50', name: 'Bite (~50 kcal)', label: 'Bite', icon: '🍏', calories: 50, grams: 15, protein: 1.9, fat: 2.2, carbs: 5.6, fiber: 0.5 },
+  { id: 'bite-100', name: 'Handful (~100 kcal)', label: 'Handful', icon: '🥜', calories: 100, grams: 30, protein: 3.8, fat: 4.4, carbs: 11.3, fiber: 1.0 },
+  { id: 'bite-200', name: 'Snack (~200 kcal)', label: 'Snack', icon: '🥐', calories: 200, grams: 60, protein: 7.5, fat: 8.9, carbs: 22.5, fiber: 2.0 }
+];
+
+/**
+ * Creates a manual food item from a calorie figure or quick bite preset.
+ */
+export function createQuickBiteItem({ name, calories, grams = 30, protein, fat, carbs, fiber, barcode = null }) {
+  const cal = Math.max(1, Number(calories) || 50);
+  const g = Math.max(1, Number(grams) || 30);
+
+  // Balanced default macro split if not supplied: 15% P, 40% F, 45% C
+  const p = protein !== undefined ? Number(protein) : (cal * 0.15) / 4;
+  const f = fat !== undefined ? Number(fat) : (cal * 0.40) / 9;
+  const c = carbs !== undefined ? Number(carbs) : (cal * 0.45) / 4;
+  const fib = fiber !== undefined ? Number(fiber) : Math.round((g * 0.02) * 10) / 10;
+
+  const per100 = {
+    calories: Math.round((cal / g) * 100 * 10) / 10,
+    protein: Math.round((p / g) * 100 * 10) / 10,
+    fat: Math.round((f / g) * 100 * 10) / 10,
+    carbs: Math.round((c / g) * 100 * 10) / 10,
+    fiber: Math.round((fib / g) * 100 * 10) / 10
+  };
+
+  return {
+    name: String(name || `Bite (~${Math.round(cal)} kcal)`).trim(),
+    grams: Math.round(g),
+    per100,
+    barcode: barcode ? String(barcode) : null
+  };
+}
+
+/**
+ * Filters recent foods to surface items suitable for grazing (e.g. snacks,
+ * bite-sized items, or small portions under 400 kcal).
+ */
+export function getGrazingSuggestions(recentFoods, { limit = 3 } = {}) {
+  if (!Array.isArray(recentFoods)) return [];
+  return recentFoods
+    .filter((f) => {
+      const cal = (f.per?.calories || 0) * (f.grams || 0);
+      return cal > 0 && cal <= 400;
+    })
+    .slice(0, limit);
 }

@@ -59,6 +59,8 @@ db.exec(`
     age_years   INTEGER,
     sex         TEXT,
     activity    TEXT,
+    diet        TEXT NOT NULL DEFAULT 'omnivore',
+    dietary_goal TEXT NOT NULL DEFAULT 'balanced',
     updated_at  TEXT NOT NULL
   );
 
@@ -167,10 +169,13 @@ function migrateToAccounts() {
         age_years   INTEGER,
         sex         TEXT,
         activity    TEXT,
+        diet        TEXT NOT NULL DEFAULT 'omnivore',
+        dietary_goal TEXT NOT NULL DEFAULT 'balanced',
         updated_at  TEXT NOT NULL
       );
       INSERT OR IGNORE INTO profiles_new
-        SELECT d.account_id, p.weight_kg, p.height_cm, p.age_years, p.sex, p.activity, p.updated_at
+        SELECT d.account_id, p.weight_kg, p.height_cm, p.age_years, p.sex, p.activity,
+               'omnivore', 'balanced', p.updated_at
         FROM profiles p JOIN devices d ON d.id = p.device_id;
       DROP TABLE profiles;
       ALTER TABLE profiles_new RENAME TO profiles;
@@ -207,6 +212,10 @@ export function addColumnIfMissing(table, column, decl) {
 addColumnIfMissing('entries', 'portion_source', 'TEXT');
 
 migrateToAccounts();
+
+// Dietary preferences and goals for Bitey recommendations
+addColumnIfMissing('profiles', 'diet', "TEXT NOT NULL DEFAULT 'omnivore'");
+addColumnIfMissing('profiles', 'dietary_goal', "TEXT NOT NULL DEFAULT 'balanced'");
 
 /**
  * Widens invites so the shared invite console can front this app.

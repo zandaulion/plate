@@ -38,7 +38,8 @@ export function summariseDay(entries, maintenance = null) {
       calories: Math.round(totals.calories),
       protein: Math.round(totals.protein * 10) / 10,
       fat: Math.round(totals.fat * 10) / 10,
-      carbs: Math.round(totals.carbs * 10) / 10
+      carbs: Math.round(totals.carbs * 10) / 10,
+      fiber: Math.round((totals.fiber || 0) * 10) / 10
     },
     byMeal,
     maintenance: maintenance || null

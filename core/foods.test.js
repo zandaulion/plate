@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fromOpenFoodFacts, fromUsda, parseServing, rankResults, toItem, isPlausible, summariseRecent } from './foods.js';
+import {
+  fromOpenFoodFacts, fromUsda, parseServing, rankResults, toItem, isPlausible, summariseRecent,
+  QUICK_BITES, createQuickBiteItem, getGrazingSuggestions
+} from './foods.js';
 
 const OFF_PRODUCT = {
   code: '3017624010701',
@@ -185,4 +188,37 @@ test('recents respect the limit', () => {
     item: { name: `food ${i}`, grams: 100, per }, loggedAt: '2026-08-30T08:00:00Z'
   }));
   assert.equal(summariseRecent(rows, { limit: 5 }).length, 5);
+});
+
+test('QUICK_BITES presets produce plausible items for manual addition', () => {
+  for (const preset of QUICK_BITES) {
+    const item = createQuickBiteItem(preset);
+    assert.equal(item.grams, preset.grams);
+    assert.ok(isPlausible(item.per100));
+    const calculatedKcal = (item.per100.calories * item.grams) / 100;
+    assert.ok(Math.abs(calculatedKcal - preset.calories) < 2, `expected ~${preset.calories}, got ${calculatedKcal}`);
+  }
+});
+
+test('createQuickBiteItem works with arbitrary calories and names', () => {
+  const custom = createQuickBiteItem({ name: '2 bites donut', calories: 120, grams: 35 });
+  assert.equal(custom.name, '2 bites donut');
+  assert.equal(custom.grams, 35);
+  assert.ok(isPlausible(custom.per100));
+  const kcal = (custom.per100.calories * custom.grams) / 100;
+  assert.ok(Math.abs(kcal - 120) < 2);
+});
+
+test('getGrazingSuggestions filters recent foods to snack/bite sizes', () => {
+  const recents = [
+    { name: 'Roast Dinner', grams: 500, per: { calories: 1.8 } }, // 900 kcal -> skip
+    { name: 'Almonds', grams: 25, per: { calories: 5.8 } },       // 145 kcal -> keep
+    { name: 'Dark Chocolate', grams: 15, per: { calories: 5.4 } },// 81 kcal -> keep
+    { name: 'Apple', grams: 150, per: { calories: 0.52 } },       // 78 kcal -> keep
+    { name: 'Large Pizza', grams: 600, per: { calories: 2.5 } }   // 1500 kcal -> skip
+  ];
+  const suggestions = getGrazingSuggestions(recents, { limit: 2 });
+  assert.equal(suggestions.length, 2);
+  assert.equal(suggestions[0].name, 'Almonds');
+  assert.equal(suggestions[1].name, 'Dark Chocolate');
 });

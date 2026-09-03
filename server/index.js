@@ -55,6 +55,50 @@ app.use('/core', (req, res, next) => {
 
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// ----------------------------------------------------------- cache buster
+
+app.get('/bust', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Clear-Site-Data', '"cache"');
+  res.send(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updating Plate...</title>
+<style>
+body { background: #12140F; color: #EFF0E6; font-family: system-ui, -apple-system, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; text-align: center; }
+.spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.2); border-top-color: #7CC79E; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div>
+  <div class="spinner"></div>
+  <h2>Updating Plate...</h2>
+  <p>Clearing caches and loading the latest build.</p>
+</div>
+<script>
+(async () => {
+  try {
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (e) {
+    console.warn('Cache bust error:', e);
+  }
+  window.location.replace('/?updated=' + Date.now());
+})();
+</script>
+</body>
+</html>`);
+});
+
 // ---------------------------------------------------------------- health
 
 app.get('/api/health', (req, res) => {
@@ -169,12 +213,29 @@ function effectiveProfile(accountId) {
   return latest ? { ...profile, weightKg: latest.kg, weightFromReading: true } : profile;
 }
 
+export const DIETS = [
+  { id: 'omnivore', label: 'Omnivore (anything goes)' },
+  { id: 'vegetarian', label: 'Vegetarian (no meat/fish)' },
+  { id: 'vegan', label: 'Vegan (100% plant-based)' },
+  { id: 'pescatarian', label: 'Pescatarian (vegetarian + seafood)' },
+  { id: 'keto', label: 'Keto / Low-carb' }
+];
+
+export const DIETARY_GOALS = [
+  { id: 'balanced', label: 'Balanced (standard split)' },
+  { id: 'high_protein', label: 'High protein (satiety & muscle)' },
+  { id: 'low_fat', label: 'Lower fat (heart & calorie density)' },
+  { id: 'low_carb', label: 'Low carbohydrate' }
+];
+
 function profileFor(accountId) {
   const row = db.prepare('SELECT * FROM profiles WHERE account_id = ?').get(accountId);
   if (!row) return null;
   return {
     weightKg: row.weight_kg, heightCm: row.height_cm,
     ageYears: row.age_years, sex: row.sex, activity: row.activity,
+    diet: row.diet || 'omnivore',
+    dietaryGoal: row.dietary_goal || 'balanced',
     updatedAt: row.updated_at
   };
 }
@@ -199,6 +260,8 @@ app.get('/api/me', requireDevice, (req, res) => {
     weightUsedKg: effectiveProfile(req.device.account_id)?.weightKg ?? null,
     expenditure: expenditureFor(req.device.account_id),
     activityLevels: ACTIVITY_LEVELS,
+    diets: DIETS,
+    dietaryGoals: DIETARY_GOALS,
     meals: MEALS,
     analysisConfigured: isConfigured(),
     // The client collects nothing unless this says so, and the server drops
@@ -234,6 +297,12 @@ app.put('/api/profile', requireDevice, (req, res) => {
   const activity = given('activity')
     ? (ACTIVITY_LEVELS.some((l) => l.id === b.activity) ? b.activity : null)
     : (current.activity ?? null);
+  const diet = given('diet')
+    ? (DIETS.some((d) => d.id === b.diet) ? b.diet : 'omnivore')
+    : (current.diet ?? 'omnivore');
+  const dietaryGoal = given('dietaryGoal')
+    ? (DIETARY_GOALS.some((g) => g.id === b.dietaryGoal) ? b.dietaryGoal : 'balanced')
+    : (current.dietaryGoal ?? 'balanced');
 
   // Out-of-range values are rejected rather than clamped: silently changing
   // someone's stated weight would produce a maintenance figure they cannot
@@ -247,13 +316,14 @@ app.put('/api/profile', requireDevice, (req, res) => {
   }
 
   db.prepare(`
-    INSERT INTO profiles (account_id, weight_kg, height_cm, age_years, sex, activity, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO profiles (account_id, weight_kg, height_cm, age_years, sex, activity, diet, dietary_goal, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id) DO UPDATE SET
       weight_kg = excluded.weight_kg, height_cm = excluded.height_cm,
       age_years = excluded.age_years, sex = excluded.sex,
-      activity = excluded.activity, updated_at = excluded.updated_at
-  `).run(req.device.account_id, weightKg, heightCm, ageYears, sex, activity, nowIso());
+      activity = excluded.activity, diet = excluded.diet,
+      dietary_goal = excluded.dietary_goal, updated_at = excluded.updated_at
+  `).run(req.device.account_id, weightKg, heightCm, ageYears, sex, activity, diet, dietaryGoal, nowIso());
 
   const profile = profileFor(req.device.account_id);
   const effective = effectiveProfile(req.device.account_id);
