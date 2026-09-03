@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plate-v69';
+const CACHE_NAME = 'plate-v70';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

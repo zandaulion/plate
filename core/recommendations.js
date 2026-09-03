@@ -1,4 +1,5 @@
-// Dietary preference definitions and macro-aware recommendation engine for Bitey.
+// Dietary preference definitions and macro-aware recommendation engine for
+// Platosaurus.
 // No I/O, no framework -- this file has to run unchanged inside the Android app
 // or browser, so it stays free of Node and browser APIs.
 
@@ -47,7 +48,7 @@ export const HIGH_FIBER_FOODS = [
 
 /**
  * Analyzes the current day's progress, body weight, and dietary preferences
- * to produce a proactive, actionable recommendation for Bitey.
+ * to produce a proactive, actionable recommendation for Platosaurus.
  *
  * @param {Object} params
  * @param {Object} params.totals - { calories, protein, fat, carbs, fiber }
@@ -93,7 +94,7 @@ export function getMacroRecommendation({
       return {
         type: 'start',
         mood: 'happy',
-        text: 'Ready for a healthy vegetarian day! Bitey is here to help keep your protein up and macros balanced. 🥦🦖',
+        text: 'Ready for a healthy vegetarian day! Platosaurus is here to help keep your protein up and macros balanced. 🥦🦖',
         suggestions: []
       };
     }
@@ -116,7 +117,7 @@ export function getMacroRecommendation({
     return {
       type: 'start',
       mood: 'happy',
-      text: 'Rawr! What are we eating today? Log your meals and Bitey will watch your macros!',
+      text: 'Rawr! What are we eating today? Log your meals and Platosaurus will watch your macros!',
       suggestions: []
     };
   }
@@ -167,7 +168,7 @@ export function getMacroRecommendation({
     return {
       type: 'balanced',
       mood: 'happy',
-      text: `Awesome macro balance today! Protein (${pPct}%), carbs (${cPct}%), and fats (${fPct}%) are spot on. Bitey approves! 🦖✨`,
+      text: `Awesome macro balance today! Protein (${pPct}%), carbs (${cPct}%), and fats (${fPct}%) are spot on. Platosaurus approves! 🦖✨`,
       suggestions: []
     };
   }

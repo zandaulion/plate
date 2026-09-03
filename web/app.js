@@ -963,7 +963,7 @@ $('plato-actions')?.addEventListener('click', async (ev) => {
         items: est.items,
         portionSource: 'estimated',
         portionConfirmed: true,
-        note: `Bitey recommendation: ${name}`
+        note: `Platosaurus recommendation: ${name}`
       })
     });
     track('recommendation_logged', { name, calories: kcal, diet: state.me?.profile?.diet });
