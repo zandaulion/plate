@@ -580,6 +580,58 @@ app.put('/api/entries/:id', requireDevice, (req, res) => {
 });
 
 /**
+ * Duplicate an existing entry.
+ *
+ * Copies items, portions and totals into a fresh entry with the current timestamp.
+ * If the original carries a photograph, it is physically copied so subsequent
+ * deletion or export behaves independently for each meal.
+ */
+app.post('/api/entries/:id/duplicate', requireDevice, (req, res) => {
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  const b = req.body || {};
+  const day = typeof b.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.day) ? b.day : row.day;
+  const id = crypto.randomUUID();
+
+  const items = Array.isArray(b.items) && b.items.length ? b.items : JSON.parse(row.items_json);
+  const portionSource = b.portionSource && PORTION_SOURCES.includes(b.portionSource)
+    ? b.portionSource
+    : (b.portionConfirmed !== undefined
+        ? portionSourceOf({ portionConfirmed: b.portionConfirmed })
+        : row.portion_source);
+  const estimate = { items, portionSource };
+  const totals = totalsOf(estimate);
+  const meal = b.meal && MEALS.includes(b.meal) ? b.meal : row.meal;
+  const note = typeof b.note === 'string' ? b.note.slice(0, 500) : row.note;
+
+  let photoId = null;
+  if (row.photo_id) {
+    try {
+      const ext = path.extname(row.photo_id) || '.jpg';
+      photoId = `${crypto.randomUUID()}${ext}`;
+      fs.copyFileSync(path.join(PHOTO_DIR, row.photo_id), path.join(PHOTO_DIR, photoId));
+    } catch {
+      photoId = null;
+    }
+  }
+
+  db.prepare(`
+    INSERT INTO entries (id, account_id, device_id, day, meal, created_at, photo_id, note,
+                         portion_confirmed, portion_source, items_json, totals_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, req.device.account_id, req.device.id, day,
+    meal, nowIso(), photoId, note,
+    portionSource === 'model' ? 0 : 1, portionSource,
+    JSON.stringify(items), JSON.stringify(totals)
+  );
+
+  res.status(201).json({ id, day, totals, photoId });
+});
+
+/**
  * Read a saved entry's photograph again, with a correction from the person
  * who ate it.
  *

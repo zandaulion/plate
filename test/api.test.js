@@ -163,6 +163,82 @@ test('an entry cannot be deleted by another device', async () => {
   assert.equal((await api(`/api/entries/${created.id}`, { method: 'DELETE', headers: a.auth })).status, 200);
 });
 
+test('an entry can be duplicated, producing an independent row and copying the photo', async () => {
+  const a = await registerDevice();
+  const b = await registerDevice();
+
+  // dummy base64 image > 100 chars
+  const image = Buffer.alloc(200, 0xFF).toString('base64');
+  const items = [
+    { name: 'Beer', grams: 330, per: { calories: 0.44, protein: 0.003, fat: 0, carbs: 0.035, fiber: 0 } }
+  ];
+
+  const originalRes = await api('/api/entries', {
+    method: 'POST', headers: a.auth,
+    body: JSON.stringify({ day: '2026-09-03', meal: 'snack', items, portionConfirmed: true, image, mimeType: 'image/png' })
+  });
+  assert.equal(originalRes.status, 201);
+  const original = await originalRes.json();
+  assert.ok(original.photoId, 'original has photo');
+
+  // Another account cannot duplicate this entry
+  const forbidden = await api(`/api/entries/${original.id}/duplicate`, {
+    method: 'POST', headers: b.auth,
+    body: JSON.stringify({ day: '2026-09-03' })
+  });
+  assert.equal(forbidden.status, 404);
+
+  // Duplicate the entry
+  const dupRes = await api(`/api/entries/${original.id}/duplicate`, {
+    method: 'POST', headers: a.auth,
+    body: JSON.stringify({ day: '2026-09-03' })
+  });
+  assert.equal(dupRes.status, 201);
+  const duplicated = await dupRes.json();
+  assert.notEqual(duplicated.id, original.id);
+  assert.equal(duplicated.totals.calories, original.totals.calories);
+  assert.ok(duplicated.photoId);
+  assert.notEqual(duplicated.photoId, original.photoId, 'photo is physically copied to a new file');
+
+  // Verify both exist on the day
+  const day = await (await api('/api/entries?day=2026-09-03', { headers: a.auth })).json();
+  assert.equal(day.entries.length, 2);
+
+  // Deleting original does not delete duplicated photo
+  await api(`/api/entries/${original.id}`, { method: 'DELETE', headers: a.auth });
+  const photoRes = await api(`/api/photo/${duplicated.photoId}`, { headers: a.auth });
+  assert.equal(photoRes.status, 200, 'duplicated photo survives deletion of original');
+});
+
+test('duplicating an entry accepts portion and meal overrides from review sheet', async () => {
+  const { auth } = await registerDevice();
+  const items = [
+    { name: 'Beer', grams: 330, per: { calories: 0.44, protein: 0.003, fat: 0, carbs: 0.035, fiber: 0 } }
+  ];
+
+  const original = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-09-03', meal: 'dinner', items, portionConfirmed: true })
+  })).json();
+
+  const overriddenItems = [
+    { name: 'Beer', grams: 500, per: { calories: 0.44, protein: 0.003, fat: 0, carbs: 0.035, fiber: 0 } }
+  ];
+
+  const dupRes = await api(`/api/entries/${original.id}/duplicate`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-09-03', meal: 'snack', items: overriddenItems, portionConfirmed: true })
+  });
+  assert.equal(dupRes.status, 201);
+  const duplicated = await dupRes.json();
+  assert.equal(duplicated.totals.calories, 220);
+
+  const day = await (await api('/api/entries?day=2026-09-03', { headers: auth })).json();
+  const found = day.entries.find((e) => e.id === duplicated.id);
+  assert.equal(found.meal, 'snack');
+  assert.equal(found.items[0].grams, 500);
+});
+
 test('malformed entries are refused', async () => {
   const { auth } = await registerDevice();
   const bad = [

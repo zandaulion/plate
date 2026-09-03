@@ -16,7 +16,7 @@ export const EVENTS = [
   'screen_open', 'screen_close',
 
   // The three ways in, and whether each one finished.
-  'entry_start', 'entry_saved', 'entry_abandoned', 'entry_edited', 'entry_deleted',
+  'entry_start', 'entry_saved', 'entry_abandoned', 'entry_edited', 'entry_deleted', 'entry_duplicated',
 
   // The photo path, which costs money and can fail.
   'analyse_start', 'analyse_ok', 'analyse_fail',

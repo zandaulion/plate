@@ -436,9 +436,17 @@ function renderEntries(entries) {
           ${badgeFor(e)}
         </div>
       </div>
-      <div>
+      <div class="entry-side">
         <div class="entry-kcal">${Math.round(e.totals?.calories ?? 0)}</div>
-        <button class="entry-del" data-del="${esc(e.id)}" aria-label="Delete this entry">&times;</button>
+        <div class="entry-actions">
+          <button class="entry-action-btn entry-dup" data-dup="${esc(e.id)}" aria-label="Duplicate this entry" title="Duplicate">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+          <button class="entry-action-btn entry-del" data-del="${esc(e.id)}" aria-label="Delete this entry" title="Delete">&times;</button>
+        </div>
       </div>
     </li>`;
   }).join('');
@@ -1157,8 +1165,28 @@ $('day-label').addEventListener('click', () => {
 });
 
 $('entries').addEventListener('click', async (ev) => {
+  const dupId = ev.target.closest('[data-dup]')?.dataset.dup;
+  if (dupId) {
+    ev.stopPropagation();
+    try {
+      const entry = state.entriesById?.get(dupId);
+      const foodName = entry?.items?.[0]?.name || 'Meal';
+      await api(`/api/entries/${encodeURIComponent(dupId)}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ day: state.day })
+      });
+      track('entry_duplicated', { source: 'list' });
+      toast(`Logged another: ${foodName}`);
+      return loadDay();
+    } catch (err) {
+      toast(err.message || 'Failed to duplicate');
+    }
+    return;
+  }
+
   const deleteId = ev.target.closest('[data-del]')?.dataset.del;
   if (deleteId) {
+    ev.stopPropagation();
     if (!confirm('Delete this entry?')) return;
     await api(`/api/entries/${encodeURIComponent(deleteId)}`, { method: 'DELETE' });
     track('entry_deleted');
@@ -1697,6 +1725,11 @@ function openReview(mode, entry = null) {
 
   $('review-heading').textContent = SHEET_TITLES[mode];
   $('save-entry').textContent = mode === 'edit' ? 'Save changes' : 'Save';
+  const dupBtn = $('dup-entry');
+  if (dupBtn) {
+    dupBtn.hidden = mode !== 'edit';
+    dupBtn.disabled = false;
+  }
 
   const photoEl = $('review-photo');
   if (entry?.photoId) {
@@ -1889,6 +1922,7 @@ function renderReview() {
   renderMealChips();
   renderGrazingCatchup();
   $('save-entry').disabled = est.items.length === 0;
+  if ($('dup-entry')) $('dup-entry').disabled = est.items.length === 0;
 }
 
 function renderGrazingCatchup() {
@@ -2589,6 +2623,41 @@ $('save-entry').addEventListener('click', async () => {
     await loadDay();
   } catch (err) {
     failed(err.message);
+    $('save-entry').disabled = false;
+  } finally {
+    state.busy = false;
+  }
+});
+
+$('dup-entry')?.addEventListener('click', async () => {
+  if (!state.editingId || !state.estimate || state.busy) return;
+  state.busy = true;
+  if ($('dup-entry')) $('dup-entry').disabled = true;
+  $('save-entry').disabled = true;
+  busy('Duplicating…');
+
+  const body = {
+    day: state.day,
+    meal: state.meal,
+    items: state.estimate.items,
+    portionSource: portionSourceOf(state.estimate),
+    portionConfirmed: state.estimate.portionConfirmed,
+    note: state.estimate.note || null
+  };
+
+  try {
+    await api(`/api/entries/${encodeURIComponent(state.editingId)}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+    track('entry_duplicated', { source: 'sheet' });
+    idle();
+    closeReview();
+    toast('Logged another');
+    await loadDay();
+  } catch (err) {
+    failed(err.message || 'Failed to duplicate');
+    if ($('dup-entry')) $('dup-entry').disabled = false;
     $('save-entry').disabled = false;
   } finally {
     state.busy = false;
