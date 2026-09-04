@@ -83,6 +83,14 @@ export function getMacroRecommendation({
   // - Standard/balanced goal: ~1.1 g/kg (e.g. ~90g for 82kg)
   const proteinTargetG = Math.round(dietaryGoal === 'high_protein' ? weight * 1.4 : weight * 1.1);
 
+  // Every message that names a protein figure names this target alongside it.
+  // Without it "protein is lagging (75g)" is a judgement rather than a
+  // measurement -- 75g is ample against a 91g target and well short of a 116g
+  // one, and only the reader knows which they set. The number is also what
+  // makes the advice actionable: a gap of 40g is a meal, a gap of 8g is a
+  // yoghurt.
+
+
   // Plentiful protein threshold: if user has already consumed >= 85g of protein
   // (or >= 85% of their daily target), protein is NEVER flagged as "lagging".
   const isProteinPlentiful = protein >= Math.min(proteinTargetG * 0.85, 85);
@@ -137,7 +145,7 @@ export function getMacroRecommendation({
     return {
       type: 'protein_target_met',
       mood: 'happy',
-      text: `Protein target crushed today (${protein}g)! Your muscles and energy are well fueled. 💪🦖`,
+      text: `Protein target crushed today (${protein}g / ${proteinTargetG}g)! Your muscles and energy are well fueled. 💪🦖`,
       suggestions: []
     };
   }
@@ -179,14 +187,14 @@ export function getMacroRecommendation({
       return {
         type: 'high_fat_plentiful_protein',
         mood: 'thinking',
-        text: `You've got a strong ${protein}g of protein today! Fats took up most of the remaining energy (${fPct}%). Keep your next bite light and balanced. 🥑`,
+        text: `Protein is at ${protein}g of your ${proteinTargetG}g target, and fats took most of the rest (${fPct}%). Keep your next bite light and balanced. 🥑`,
         suggestions: []
       };
     }
     return {
       type: 'solid_protein',
       mood: 'happy',
-      text: `Great job on protein today (${protein}g)! Your protein intake is solid and well on track. 💪🦖`,
+      text: `Good protein haul today — ${protein}g of your ${proteinTargetG}g target. 💪🦖`,
       suggestions: []
     };
   }
@@ -196,7 +204,7 @@ export function getMacroRecommendation({
     return {
       type: 'veg_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are high today (${fPct}%), but protein is lagging (${pPct}%, ${protein}g). Try balancing your next meal with lean plant or dairy protein!`,
+      text: `Fats are high today (${fPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. Lean plant or dairy protein would close the gap!`,
       suggestions: LEAN_PROTEIN_FOODS.vegetarian.slice(0, 3)
     };
   }
@@ -206,7 +214,7 @@ export function getMacroRecommendation({
     return {
       type: 'vegan_low_protein',
       mood: 'thinking',
-      text: `Plant protein is running low today (${pPct}%, ${protein}g). Consider a boost like seitan, edamame, or lentils for your next meal!`,
+      text: `Plant protein is at ${protein}g of your ${proteinTargetG}g target today. Seitan, edamame or lentils would close the gap!`,
       suggestions: LEAN_PROTEIN_FOODS.vegan.slice(0, 3)
     };
   }
@@ -216,7 +224,7 @@ export function getMacroRecommendation({
     return {
       type: 'pesc_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are up (${fPct}%) while protein is lagging (${pPct}%, ${protein}g). A light fish or plant protein would balance your day nicely!`,
+      text: `Fats are up (${fPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. A light fish or plant protein would balance the day nicely!`,
       suggestions: LEAN_PROTEIN_FOODS.pescatarian.slice(0, 3)
     };
   }
@@ -226,7 +234,7 @@ export function getMacroRecommendation({
     return {
       type: 'omni_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are currently ${fPct}% of calories and protein is at ${pPct}% (${protein}g). Try reaching for lean proteins for your next bite!`,
+      text: `Fats are ${fPct}% of calories and protein is at ${protein}g of your ${proteinTargetG}g target. Reach for something lean on the next bite!`,
       suggestions: LEAN_PROTEIN_FOODS.omnivore.slice(0, 3)
     };
   }
@@ -237,7 +245,7 @@ export function getMacroRecommendation({
     return {
       type: 'goal_protein_behind',
       mood: 'thinking',
-      text: `Aiming for high protein today, but currently at ${pPct}% (${protein}g / ${proteinTargetG}g target). Time to fuel up with some protein-dense foods!`,
+      text: `Aiming for high protein today — you're at ${protein}g of your ${proteinTargetG}g target. Time to fuel up with some protein-dense foods!`,
       suggestions: pool.slice(0, 3)
     };
   }
@@ -248,7 +256,7 @@ export function getMacroRecommendation({
     return {
       type: 'high_carb_low_protein',
       mood: 'thinking',
-      text: `Carbs are taking the lead today (${cPct}%) while protein is at ${pPct}% (${protein}g). Adding some protein will keep energy steady!`,
+      text: `Carbs are taking the lead today (${cPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. Adding some protein will keep energy steady!`,
       suggestions: pool.slice(0, 3)
     };
   }

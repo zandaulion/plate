@@ -14,7 +14,10 @@ test('recommends lean vegetable protein for vegetarian with high fat and low pro
   assert.ok(rec, 'Expected a recommendation');
   assert.equal(rec.type, 'veg_high_fat_low_protein');
   assert.equal(rec.mood, 'thinking');
-  assert.match(rec.text, /Fats are high today.*protein is lagging/);
+  assert.match(rec.text, /Fats are high today/);
+  // The target is the point of the message: "20g" alone says nothing about
+  // whether the day went well.
+  assert.match(rec.text, /20g of your 83g target/);
   assert.ok(rec.suggestions.length > 0);
   assert.ok(rec.suggestions.some((s) => s.name.toLowerCase().includes('edamame') || s.name.toLowerCase().includes('skyr')));
 });
@@ -135,4 +138,74 @@ test('celebrates when protein target is met for body weight', () => {
   assert.ok(rec);
   assert.equal(rec.type, 'protein_target_met');
   assert.match(rec.text, /crushed/i);
+});
+
+test('the day that prompted this: 75g protein names the target it is short of', () => {
+  // Real numbers from a logged day: 2337 kcal, 74.8g protein, 93.7g fat.
+  // The old message said "protein is lagging (15%, 75g)" and left the reader
+  // no way to tell whether 75g was a good day or a bad one.
+  const rec = getMacroRecommendation({
+    totals: { calories: 2337, protein: 74.8, fat: 93.7, carbs: 197.9, fiber: 10.6 },
+    split: { protein: 15, carbs: 41, fat: 44 },
+    diet: 'vegetarian',
+    dietaryGoal: 'high_protein',
+    entriesCount: 6,
+    weightKg: 82.7
+  });
+
+  assert.ok(rec);
+  assert.equal(rec.type, 'veg_high_fat_low_protein');
+  assert.match(rec.text, /75g of your 116g target/);
+  assert.doesNotMatch(rec.text, /lagging/);
+});
+
+test('every low-protein message states the target, whatever the diet', () => {
+  // A protein figure without its target is the defect being guarded against,
+  // and there is one of these messages per diet -- so the rule is checked
+  // across all of them rather than on the one that happened to be reported.
+  const cases = [
+    ['vegetarian', 'veg_high_fat_low_protein'],
+    ['pescatarian', 'pesc_high_fat_low_protein'],
+    ['omnivore', 'omni_high_fat_low_protein']
+  ];
+  for (const [diet, type] of cases) {
+    const rec = getMacroRecommendation({
+      totals: { calories: 2000, protein: 45, fat: 110, carbs: 180 },
+      split: { protein: 9, carbs: 41, fat: 50 },
+      diet,
+      dietaryGoal: 'balanced',
+      entriesCount: 4,
+      weightKg: 80
+    });
+    assert.equal(rec.type, type, diet);
+    assert.match(rec.text, /45g of your 88g target/, diet);
+  }
+
+  const vegan = getMacroRecommendation({
+    totals: { calories: 1800, protein: 40, fat: 60, carbs: 250 },
+    split: { protein: 9, carbs: 61, fat: 30 },
+    diet: 'vegan',
+    dietaryGoal: 'balanced',
+    entriesCount: 4,
+    weightKg: 80
+  });
+  assert.equal(vegan.type, 'vegan_low_protein');
+  assert.match(vegan.text, /40g of your 88g target/);
+});
+
+test('a plentiful day is not dressed up as "on track" when the goal is higher', () => {
+  // 85g clears the do-not-nag threshold, but it is 73% of a 116g target and
+  // the message used to claim the intake was "well on track".
+  const rec = getMacroRecommendation({
+    totals: { calories: 2000, protein: 85, fat: 70, carbs: 220, fiber: 20 },
+    split: { protein: 17, carbs: 45, fat: 32 },
+    diet: 'omnivore',
+    dietaryGoal: 'high_protein',
+    entriesCount: 4,
+    weightKg: 82.7
+  });
+
+  assert.ok(rec);
+  assert.match(rec.text, /85g of your 116g target/);
+  assert.doesNotMatch(rec.text, /well on track/);
 });
