@@ -1713,8 +1713,13 @@ function initSheetSwipeDown(sheetId, scrollerId, close) {
     const speed = dy / Math.max(1, Date.now() - startedAt);
     // Either far enough, or a flick that clearly meant it.
     if (dy > 110 || (dy > 45 && speed > 0.55)) {
+      // Cleared first so the sheet's own drop animation starts from where it
+      // belongs rather than from wherever the finger left it.
       reset(false);
-      close();
+      // A close can be refused -- the review sheet asks before discarding an
+      // edit -- and a refused sheet has to come back rather than sit off
+      // screen with nothing holding it there.
+      if (close() === false) reset(true);
     } else {
       reset(true);
     }
@@ -2157,7 +2162,7 @@ function closeReview() {
   //
   // Asked only when something actually changed, so opening an entry to look at
   // it and closing again is still one tap.
-  if (hasUnsavedEdit() && !confirm('Discard your changes to this entry?')) return;
+  if (hasUnsavedEdit() && !confirm('Discard your changes to this entry?')) return false;
   state.openedAs = null;
 
   document.activeElement?.blur?.();
@@ -2171,10 +2176,16 @@ function closeReview() {
     teardownReview();
   }
   dismissScreen('review');
+  return true;
 }
 
 $('review-close').addEventListener('click', closeReview);
 $('review').addEventListener('click', (ev) => { if (ev.target === $('review')) closeReview(); });
+
+// The same drag as trends. It reaches the unsaved-changes confirm rather than
+// going round it: a swipe is easier to start by accident than a button is to
+// press by accident, which makes that guard more useful here, not less.
+initSheetSwipeDown('review', 'review-body', closeReview);
 $('add-manual').addEventListener('click', () => openReview('manual'));
 
 // Barcode is its own way in, not a control inside the sheet: the sheet opens

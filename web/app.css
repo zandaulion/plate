@@ -1905,9 +1905,9 @@ input[type="range"]::-moz-range-thumb {
    back into view while the finger is still down and the gesture reads as
    reversible rather than committed. */
 .sheet { --sheet-drag: 0; }
-#trends { background: color-mix(in srgb, var(--ink) calc(45% * (1 - var(--sheet-drag))), transparent); }
+#trends, #review { background: color-mix(in srgb, var(--ink) calc(45% * (1 - var(--sheet-drag))), transparent); }
 
 /* A dragged sheet must not also be scrolled by the same finger, and the sheet
    must not hand the gesture up to the page as pull-to-refresh. */
-#trends-body { overscroll-behavior: contain; }
-#trends .sheet-inner { touch-action: pan-y; }
+#trends-body, #review-body { overscroll-behavior: contain; }
+#trends .sheet-inner, #review .sheet-inner { touch-action: pan-y; }
