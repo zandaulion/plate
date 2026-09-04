@@ -362,19 +362,25 @@ function renderSplit(split) {
 }
 
 /**
- * Portion source is only worth flagging when it changes the numbers.
+ * Portion source is only worth flagging when it changes the numbers, and only
+ * ever as something that was done rather than something that was not.
  *
- * It does that for a photograph, where the weight is the dominant error. It
- * does not for a scanned barcode or a typed panel: the nutrition there is
- * exact and rangesOf already declines to widen it, so labelling such an entry
- * "weight not set" reports a doubt the app does not actually have.
+ * It marked the unset case for a while, which was accurate and horrible to
+ * live with: every photographed meal carried a small amber "weight not set",
+ * so the log read as a list of unfinished chores. The app does not need the
+ * weight -- the hint under the slider says so in as many words -- and a marker
+ * for the absence of an optional step turns an estimate into a reproach.
+ *
+ * Only a barcode or a typed panel is unmarked outright: the nutrition there is
+ * exact, rangesOf already declines to widen it, and there is no weight to have
+ * set.
  */
 function badgeFor(entry) {
   const fromPhoto = (entry.items || []).some((i) => i.source === 'photo');
   if (!fromPhoto) return '';
   if (entry.portionSource === 'weighed') return '<span class="badge-est badge-weighed">weighed</span>';
-  if (entry.portionSource === 'estimated') return '';
-  return '<span class="badge-est">weight not set</span>';
+  if (entry.portionSource === 'estimated') return '<span class="badge-est">weight set</span>';
+  return '';
 }
 
 function getFoodEmoji(name = '') {
@@ -1975,8 +1981,11 @@ function renderReview() {
 
   if (photoBased) {
     const source = portionSourceOf(est);
+    // Nothing at all for an unset weight. The range is already the honest
+    // statement about it, and appending a job to a number the app is perfectly
+    // happy with was the same reproach as the badge.
     const tail = {
-      model: ' \u2014 set the weight if you know it',
+      model: '',
       estimated: ' \u2014 from your estimate of the weight',
       weighed: ' \u2014 from a weighed portion'
     }[source];
@@ -1987,10 +1996,14 @@ function renderReview() {
     // Stated plainly, because the measurement does not support "always
     // adjust": a guess worse than about 30% is no better than leaving the
     // model's own estimate alone.
-    $('weight-hint').textContent = source === 'weighed'
-      ? 'Weighed portions are roughly twice as accurate as an eyeballed one.'
-      : 'Only worth changing if you have a better idea than the photo does — '
-        + 'a rough guess is no more accurate than leaving it.';
+    $('weight-hint').textContent = {
+      weighed: 'Weighed portions are roughly twice as accurate as an eyeballed one.',
+      estimated: 'Using your weight rather than the photo\u2019s guess.',
+      // Permission not to act, which is the opposite of what the badge was
+      // doing and the reason this line stays.
+      model: 'Only worth changing if you have a better idea than the photo does — '
+        + 'a rough guess is no more accurate than leaving it.'
+    }[source];
   } else {
     $('review-range').textContent = totals.calories
       ? 'From the food database \u2014 exact for the weights you entered.'
