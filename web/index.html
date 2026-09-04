@@ -207,26 +207,13 @@
           </div>
         </section>
 
-        <!-- The measurement says this control is worth more than everything
-             else on the screen, so it sits above the item list, not below. -->
-        <section class="weight-block" id="weight-block">
-          <div class="weight-head">
-            <label for="total-weight">Total weight on the plate</label>
-            <output id="weight-out" for="total-weight">0 g</output>
-          </div>
-          <input id="total-weight" type="range" min="20" max="1500" step="10" value="300">
-          <label class="weighed-row">
-            <input id="weighed" type="checkbox">
-            <span>I weighed it, or the packet said</span>
-          </label>
-          <p class="hint" id="weight-hint"></p>
-        </section>
-
-        <!-- Below the weight, because it answers a different question: the
-             weight is what was served, this is how much of it went. Kept
-             separate for that reason -- reducing the served weight instead
-             would destroy the measurement in order to record a decision about
-             it, and there would be nothing to change your mind against. -->
+        <!-- Above the weight, because it is the question that gets answered.
+             The weight is only worth touching when you have a better idea than
+             the photo does, which is seldom; how much of it you ate is a
+             comparison you can always make. Kept separate from the weight for
+             a different reason -- the weight is what was served, this is how
+             much of it went, and reducing the served weight instead would
+             destroy the measurement in order to record a decision about it. -->
         <section class="ate-block" id="ate-block" hidden>
           <div class="ate-head">
             <span id="ate-label">How much did you eat?</span>
@@ -244,6 +231,22 @@
           <p class="hint" id="ate-hint"></p>
         </section>
         <input id="file-leftovers" type="file" accept="image/*" capture="environment" hidden>
+        <!-- Worth more than anything below it, so it sits above the item
+             list. It now sits under the fraction rather than over it: this is
+             the control that pays off when you actually know the weight, and
+             that is rarer than knowing you left a quarter. -->
+        <section class="weight-block" id="weight-block">
+          <div class="weight-head">
+            <label for="total-weight">Total weight on the plate</label>
+            <output id="weight-out" for="total-weight">0 g</output>
+          </div>
+          <input id="total-weight" type="range" min="20" max="1500" step="10" value="300">
+          <label class="weighed-row">
+            <input id="weighed" type="checkbox">
+            <span>I weighed it, or the packet said</span>
+          </label>
+          <p class="hint" id="weight-hint"></p>
+        </section>
 
         <!-- Sits directly under the weight control, not below the item list:
              the number has to be visible while the slider is being dragged,
