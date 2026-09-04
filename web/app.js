@@ -500,7 +500,7 @@ function renderQuickBiteTray(recents) {
   container.innerHTML = presetHtml + recentHtml + customHtml;
 }
 
-function getPlatoSvg(mood = 'happy') {
+function getBiteySvg(mood = 'happy') {
   const isNom = mood === 'nom';
   const isFull = mood === 'full';
   const isThinking = mood === 'thinking';
@@ -546,7 +546,7 @@ function getPlatoSvg(mood = 'happy') {
     mouthSvg = `<path d="M 68 44 Q 72 48 75 43" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
   }
 
-  return `<svg viewBox="0 0 100 100" class="plato-dino-svg" xmlns="http://www.w3.org/2000/svg">
+  return `<svg viewBox="0 0 100 100" class="bitey-dino-svg" xmlns="http://www.w3.org/2000/svg">
     <!-- Dino back spikes -->
     <path d="M 22 45 Q 16 48 22 55 Q 15 58 22 65" fill="none" stroke="#F59E0B" stroke-width="5" stroke-linecap="round"/>
     <!-- Head & neck -->
@@ -571,7 +571,7 @@ function getPlatoSvg(mood = 'happy') {
   </svg>`;
 }
 
-const PLATO_QUOTES = [
+const BITEY_QUOTES = [
   "Rawr means I love healthy food in dinosaur! 🦕",
   "Spendosaurus counts the pennies, I count the calories! 🦖",
   "A little graze here, a little graze there... it all counts! 🍏",
@@ -580,7 +580,7 @@ const PLATO_QUOTES = [
   "Honest logging is the secret to real progress! ✨",
   "I'm a herbivore, but I respect the macros! 🥗",
   "Back in the Jurassic, we didn't have barcode scanners. We just nibbled trees! 🌲",
-  "T-Rex skips arm day, but Platosaurus never skips meal logging! 🦖",
+  "T-Rex skips arm day, but Bitey never skips meal logging! 🦖",
   "Brachiosaurus was 40 tons of pure plant-powered gains! 🌿",
   "Meteor showers? Scary. Forgetting to log olive oil? Even scarier! 🫒",
   "Dinosaurs roamed for 165 million years, so take your time and build great habits! ⏳",
@@ -589,7 +589,7 @@ const PLATO_QUOTES = [
   "Prehistoric wisdom: a balanced plate prevents extinction! 🍽️",
   "Herbivore secret: crisp greens give you mega sauropod energy! 🥬",
   "My tiny wooden fork was carved from a petrified redwood tree! 🌲🍴",
-  "A bite of cheese, a handful of almonds... Plato sees all, Plato logs all! 🧀",
+  "A bite of cheese, a handful of almonds... Bitey sees all, Bitey logs all! 🧀",
   "Grazing is an ancient dinosaur foraging technique. Very respectable! 🌾",
   "Did you know? Two bites of cookie still count as fuel! 🍪",
   "Honest snacking beats secret snacking every single time! 🌟",
@@ -606,7 +606,7 @@ const PLATO_QUOTES = [
   "Fueling your body well is the ultimate form of self-respect! 💚",
   "You don't need a cheat day when you genuinely enjoy what you eat! 🥑",
   "A colorful plate is a happy plate. Look at those vibrant macros! 🌈",
-  "High protein day? Platosaurus flexes his tiny sauropod bicep! 💪",
+  "High protein day? Bitey flexes his tiny sauropod bicep! 💪",
   "Energy in, energy out — the ancient rhythm of the cosmos! 🌌",
   "Progress isn't a straight line, it's a gentle, steady trend! 📈",
   "Spendosaurus saves the dollars, I savor the calories! 💰😋",
@@ -622,7 +622,7 @@ const PLATO_QUOTES = [
   "Snack time is undeniably the best hour of the 24-hour day! 🕒🥨",
   "Who needs a personal trainer when you have a personal sauropod? 🦖🏋️",
   "Eating mindful meals is the modern version of top-tier foraging! 🧺",
-  "If you enjoy chocolate, log it with pride! No hiding from Platosaurus! 🍫",
+  "If you enjoy chocolate, log it with pride! No hiding from Bitey! 🍫",
   "Fiber keeps the dinosaur digestive system running smooth as clockwork! 🌾",
   "Fun fact: Sauropods ate 400 kg of greens a day. You only need a tasty salad! 🥗",
   "Treat your body like a treasured museum fossil: take good care of it! 🏛️✨",
@@ -631,33 +631,33 @@ const PLATO_QUOTES = [
   "Stay curious, eat delicious food, and keep crushing your goals! 🚀"
 ];
 
-let platoCycleTimer = null;
-let lastPlatoQuoteIdx = -1;
+let biteyCycleTimer = null;
+let lastBiteyQuoteIdx = -1;
 
-function getNextPlatoQuote() {
-  if (!PLATO_QUOTES.length) return "Rawr! 🦕";
-  let idx = Math.floor(Math.random() * PLATO_QUOTES.length);
-  if (idx === lastPlatoQuoteIdx && PLATO_QUOTES.length > 1) {
-    idx = (idx + 1) % PLATO_QUOTES.length;
+function getNextBiteyQuote() {
+  if (!BITEY_QUOTES.length) return "Rawr! 🦕";
+  let idx = Math.floor(Math.random() * BITEY_QUOTES.length);
+  if (idx === lastBiteyQuoteIdx && BITEY_QUOTES.length > 1) {
+    idx = (idx + 1) % BITEY_QUOTES.length;
   }
-  lastPlatoQuoteIdx = idx;
-  return PLATO_QUOTES[idx];
+  lastBiteyQuoteIdx = idx;
+  return BITEY_QUOTES[idx];
 }
 
-function cyclePlatoMessage(specificMessage = null, bounce = false) {
-  const speech = $('plato-speech');
-  const btn = $('plato-avatar');
-  const wrap = $('plato-svg-wrap');
+function cycleBiteyMessage(specificMessage = null, bounce = false) {
+  const speech = $('bitey-speech');
+  const btn = $('bitey-avatar');
+  const wrap = $('bitey-svg-wrap');
   if (!speech) return;
 
-  // Don't interrupt if Plato is currently munching on a fresh bite
+  // Don't interrupt if Bitey is currently munching on a fresh bite
   if (!specificMessage && state.lastBiteMunchTime && (Date.now() - state.lastBiteMunchTime < 4500)) {
     return;
   }
 
-  const message = specificMessage || (state.activePlatoRecommendation?.text && !bounce
-    ? state.activePlatoRecommendation.text
-    : getNextPlatoQuote());
+  const message = specificMessage || (state.activeBiteyRecommendation?.text && !bounce
+    ? state.activeBiteyRecommendation.text
+    : getNextBiteyQuote());
 
   if (bounce && btn) {
     btn.classList.remove('is-bouncing');
@@ -673,18 +673,18 @@ function cyclePlatoMessage(specificMessage = null, bounce = false) {
     speech.textContent = message;
     speech.style.opacity = '1';
     if (wrap && (!state.lastBiteMunchTime || (Date.now() - state.lastBiteMunchTime >= 4500))) {
-      const mood = message === state.activePlatoRecommendation?.text
-        ? (state.activePlatoRecommendation?.mood || 'happy')
+      const mood = message === state.activeBiteyRecommendation?.text
+        ? (state.activeBiteyRecommendation?.mood || 'happy')
         : 'happy';
-      wrap.innerHTML = getPlatoSvg(mood);
+      wrap.innerHTML = getBiteySvg(mood);
     }
   }, 150);
 }
 
-function startPlatoCycle() {
-  if (platoCycleTimer) clearInterval(platoCycleTimer);
-  platoCycleTimer = setInterval(() => {
-    cyclePlatoMessage();
+function startBiteyCycle() {
+  if (biteyCycleTimer) clearInterval(biteyCycleTimer);
+  biteyCycleTimer = setInterval(() => {
+    cycleBiteyMessage();
   }, 20000);
 }
 
@@ -741,14 +741,14 @@ function trendWanted(gap) {
   return 'trend on the way';
 }
 
-function updatePlatoCompanion(summary, split = null, entries = []) {
-  const wrap = $('plato-svg-wrap');
-  const speech = $('plato-speech');
-  const actionsEl = $('plato-actions');
+function updateBiteyCompanion(summary, split = null, entries = []) {
+  const wrap = $('bitey-svg-wrap');
+  const speech = $('bitey-speech');
+  const actionsEl = $('bitey-actions');
   if (!wrap || !speech) return;
 
   if (state.lastBiteMunchTime && (Date.now() - state.lastBiteMunchTime < 4500)) {
-    wrap.innerHTML = getPlatoSvg('nom');
+    wrap.innerHTML = getBiteySvg('nom');
     speech.textContent = state.lastBiteName
       ? `Nom nom nom! ${state.lastBiteName} was delicious! 😋`
       : `Nom nom nom! Delicious snack! 🍏`;
@@ -771,17 +771,17 @@ function updatePlatoCompanion(summary, split = null, entries = []) {
   });
 
   if (rec) {
-    state.activePlatoRecommendation = rec;
-    wrap.innerHTML = getPlatoSvg(rec.mood || 'happy');
+    state.activeBiteyRecommendation = rec;
+    wrap.innerHTML = getBiteySvg(rec.mood || 'happy');
     speech.textContent = rec.text;
 
     if (actionsEl) {
       if (rec.suggestions?.length) {
         actionsEl.hidden = false;
         actionsEl.innerHTML = rec.suggestions.map((s) =>
-          `<button type="button" class="plato-chip" data-name="${esc(s.name)}" data-calories="${s.calories}" data-grams="${s.grams}" data-protein="${s.protein}" data-fat="${s.fat}" data-carbs="${s.carbs}" data-fiber="${s.fiber ?? 0}">
+          `<button type="button" class="bitey-chip" data-name="${esc(s.name)}" data-calories="${s.calories}" data-grams="${s.grams}" data-protein="${s.protein}" data-fat="${s.fat}" data-carbs="${s.carbs}" data-fiber="${s.fiber ?? 0}">
             <span>+ ${esc(s.name)}</span>
-            <span class="plato-chip-cal">${s.calories} kcal</span>
+            <span class="bitey-chip-cal">${s.calories} kcal</span>
           </button>`
         ).join('');
       } else {
@@ -795,11 +795,11 @@ function updatePlatoCompanion(summary, split = null, entries = []) {
   // A recommendation belongs to the day it was computed from. Clearing the
   // state without clearing the bubble left the previous day's line standing:
   // step back to yesterday, step forward to a morning with one meal in it, and
-  // Platosaurus was still reporting yesterday's fats. The text is only left
+  // Bitey was still reporting yesterday's fats. The text is only left
   // alone when it is one of the idle quotes, which cycle on their own timer and
   // would restart on every render otherwise.
-  const stale = state.activePlatoRecommendation?.text || null;
-  state.activePlatoRecommendation = null;
+  const stale = state.activeBiteyRecommendation?.text || null;
+  state.activeBiteyRecommendation = null;
   if (actionsEl) {
     actionsEl.hidden = true;
     actionsEl.innerHTML = '';
@@ -807,10 +807,10 @@ function updatePlatoCompanion(summary, split = null, entries = []) {
 
   if (!speech.textContent || speech.textContent === stale
       || speech.textContent === 'Rawr! What are we eating today?') {
-    speech.textContent = getNextPlatoQuote();
+    speech.textContent = getNextBiteyQuote();
   }
 
-  wrap.innerHTML = getPlatoSvg('happy');
+  wrap.innerHTML = getBiteySvg('happy');
 }
 
 async function loadDay() {
@@ -843,7 +843,7 @@ async function loadDay() {
   renderWeigh(state.day, data.weight, data.expenditure);
   renderEntries(data.entries);
   await loadQuickBites();
-  updatePlatoCompanion(data.summary, data.split, data.entries);
+  updateBiteyCompanion(data.summary, data.split, data.entries);
 }
 
 $('quick-bite-chips')?.addEventListener('click', async (ev) => {
@@ -912,7 +912,7 @@ $('quick-bite-chips')?.addEventListener('click', async (ev) => {
     track('quick_bite_logged', { name: item.name, calories: cal });
     state.lastBiteMunchTime = Date.now();
     state.lastBiteName = item.name;
-    const avatarBtn = $('plato-avatar');
+    const avatarBtn = $('bitey-avatar');
     if (avatarBtn) {
       avatarBtn.classList.remove('is-bouncing');
       void avatarBtn.offsetWidth;
@@ -972,7 +972,7 @@ $('quick-custom-form')?.addEventListener('submit', async (ev) => {
     track('quick_bite_logged', { name, calories: kcal, custom: true });
     state.lastBiteMunchTime = Date.now();
     state.lastBiteName = name;
-    const customAvatarBtn = $('plato-avatar');
+    const customAvatarBtn = $('bitey-avatar');
     if (customAvatarBtn) {
       customAvatarBtn.classList.remove('is-bouncing');
       void customAvatarBtn.offsetWidth;
@@ -997,8 +997,8 @@ $('quick-custom-form')?.addEventListener('submit', async (ev) => {
   }
 });
 
-$('plato-actions')?.addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('.plato-chip');
+$('bitey-actions')?.addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('.bitey-chip');
   if (!btn || state.busy) return;
   ev.stopPropagation();
 
@@ -1033,14 +1033,14 @@ $('plato-actions')?.addEventListener('click', async (ev) => {
         items: est.items,
         portionSource: 'estimated',
         portionConfirmed: true,
-        note: `Platosaurus recommendation: ${name}`
+        note: `Bitey recommendation: ${name}`
       })
     });
     track('recommendation_logged', { name, calories: kcal, diet: state.me?.profile?.diet });
     state.lastBiteMunchTime = Date.now();
     state.lastBiteName = name;
 
-    const avatarBtn = $('plato-avatar');
+    const avatarBtn = $('bitey-avatar');
     if (avatarBtn) {
       avatarBtn.classList.remove('is-bouncing');
       void avatarBtn.offsetWidth;
@@ -1062,16 +1062,16 @@ $('plato-actions')?.addEventListener('click', async (ev) => {
   }
 });
 
-const onPlatoTap = (ev) => {
-  if (ev?.target?.closest?.('.plato-chip')) return;
-  cyclePlatoMessage(null, true);
-  startPlatoCycle();
+const onBiteyTap = (ev) => {
+  if (ev?.target?.closest?.('.bitey-chip')) return;
+  cycleBiteyMessage(null, true);
+  startBiteyCycle();
 };
-$('plato-card')?.addEventListener('click', onPlatoTap);
-$('plato-card')?.addEventListener('keydown', (e) => {
+$('bitey-card')?.addEventListener('click', onBiteyTap);
+$('bitey-card')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
-    onPlatoTap();
+    onBiteyTap();
   }
 });
 
@@ -1097,12 +1097,12 @@ async function cardDealTransition(direction, updateFn) {
     // Update the day and load data
     await updateFn();
 
-    // Plato cheers / hops for the new day
-    const platoBtn = $('plato-avatar');
-    if (platoBtn) {
-      platoBtn.classList.remove('is-bouncing');
-      void platoBtn.offsetWidth;
-      platoBtn.classList.add('is-bouncing');
+    // Bitey cheers / hops for the new day
+    const biteyBtn = $('bitey-avatar');
+    if (biteyBtn) {
+      biteyBtn.classList.remove('is-bouncing');
+      void biteyBtn.offsetWidth;
+      biteyBtn.classList.add('is-bouncing');
     }
 
     if (cards) {
@@ -3158,7 +3158,7 @@ function initStickyDayTracker() {
   const topbar = document.querySelector('.topbar');
   const compactTracker = $('day-compact-tracker');
   const topbarSplit = $('topbar-split');
-  const platoCard = $('plato-card');
+  const biteyCard = $('bitey-card');
 
   // Calories, macros and split bar are always visible in the today card
   if (compactTracker) compactTracker.hidden = false;
@@ -3174,8 +3174,8 @@ function initStickyDayTracker() {
   const updateStickyState = () => {
     const isScrolled = window.scrollY > 20;
     topbar.classList.toggle('scrolled', isScrolled);
-    if (platoCard) {
-      platoCard.classList.toggle('is-sticky', isScrolled);
+    if (biteyCard) {
+      biteyCard.classList.toggle('is-sticky', isScrolled);
     }
   };
 
@@ -3191,8 +3191,8 @@ async function start() {
   await loadDay();
   handleUrlActions();
   initStickyDayTracker();
-  cyclePlatoMessage();
-  startPlatoCycle();
+  cycleBiteyMessage();
+  startBiteyCycle();
   initDaySwipe();
 }
 

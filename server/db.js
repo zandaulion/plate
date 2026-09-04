@@ -213,7 +213,7 @@ addColumnIfMissing('entries', 'portion_source', 'TEXT');
 
 migrateToAccounts();
 
-// Dietary preferences and goals for Platosaurus recommendations
+// Dietary preferences and goals for Bitey recommendations
 addColumnIfMissing('profiles', 'diet', "TEXT NOT NULL DEFAULT 'omnivore'");
 addColumnIfMissing('profiles', 'dietary_goal', "TEXT NOT NULL DEFAULT 'balanced'");
 

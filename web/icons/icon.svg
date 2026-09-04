@@ -43,7 +43,7 @@
   <path d="M 0 410 L 512 410 L 512 512 L 0 512 Z" fill="#241B14" opacity="0.85"/>
   <line x1="0" y1="410" x2="512" y2="410" stroke="#3D2E22" stroke-width="3"/>
 
-  <!-- Platosaurus Peeking -->
+  <!-- Bitey Peeking -->
   <g transform="translate(16, 8)">
     <!-- Back amber spines -->
     <path d="M 170 170 Q 145 180 165 210 Q 140 225 160 255 Q 142 275 162 305" fill="none" stroke="#F59E0B" stroke-width="16" stroke-linecap="round"/>

@@ -306,9 +306,9 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   100% { transform: translateX(0) rotate(0); }
 }
 
-/* ----------------------------------------------------- platosaurus mascot */
+/* ----------------------------------------------------- bitey mascot */
 
-.plato-card {
+.bitey-card {
   position: sticky;
   top: calc(var(--topbar-h, 60px) + 6px);
   z-index: 8;
@@ -328,54 +328,54 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   user-select: none;
   transition: padding .2s cubic-bezier(.22,.8,.3,1), transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
-.plato-card:hover {
+.bitey-card:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   box-shadow: 0 6px 20px rgba(0,0,0,.07);
 }
-.plato-card:hover .plato-avatar-btn {
+.bitey-card:hover .bitey-avatar-btn {
   transform: scale(1.06) rotate(-2deg);
 }
-.plato-card:active {
+.bitey-card:active {
   transform: scale(0.985);
 }
-.plato-card:focus-visible {
+.bitey-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.plato-card::before {
+.bitey-card::before {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; height: 3.5px;
   background: linear-gradient(90deg, var(--accent) 0%, var(--carbs) 50%, var(--fat) 100%);
   opacity: 0.85;
 }
-.plato-card.is-sticky {
+.bitey-card.is-sticky {
   padding: 8px 12px 9px 10px;
   box-shadow: 0 4px 18px rgba(0,0,0,.09);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
 }
-.plato-card.is-sticky .plato-avatar-btn {
+.bitey-card.is-sticky .bitey-avatar-btn {
   flex: 0 0 44px;
   width: 44px;
   height: 44px;
   border-radius: 14px;
 }
-.plato-card.is-sticky .plato-svg-wrap {
+.bitey-card.is-sticky .bitey-svg-wrap {
   width: 36px;
   height: 36px;
 }
-.plato-card.is-sticky .plato-speech {
+.bitey-card.is-sticky .bitey-speech {
   font-size: .81rem;
   line-height: 1.34;
   min-height: calc(3 * 1.34em);
 }
-.plato-card.is-sticky .plato-badge {
+.bitey-card.is-sticky .bitey-badge {
   font-size: .68rem;
 }
-.plato-card.is-sticky .plato-hint {
+.bitey-card.is-sticky .bitey-hint {
   font-size: .64rem;
 }
-.plato-avatar-btn {
+.bitey-avatar-btn {
   flex: 0 0 56px;
   width: 56px;
   height: 56px;
@@ -390,53 +390,53 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.4, 1);
   user-select: none;
 }
-.plato-avatar-btn.is-bouncing {
-  animation: plato-jump 0.5s ease;
+.bitey-avatar-btn.is-bouncing {
+  animation: bitey-jump 0.5s ease;
 }
-@keyframes plato-jump {
+@keyframes bitey-jump {
   0% { transform: scale(0.92); }
   45% { transform: scale(1.18) translateY(-5px) rotate(4deg); }
   75% { transform: scale(0.98) translateY(1px); }
   100% { transform: scale(1) rotate(0); }
 }
 
-.plato-svg-wrap {
+.bitey-svg-wrap {
   width: 48px;
   height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.plato-dino-svg {
+.bitey-dino-svg {
   width: 100%;
   height: 100%;
   overflow: visible;
 }
-.plato-bubble {
+.bitey-bubble {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.plato-head {
+.bitey-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.plato-badge {
+.bitey-badge {
   font-size: .72rem;
   font-weight: 750;
   letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--accent);
 }
-.plato-hint {
+.bitey-hint {
   font-size: .68rem;
   font-weight: 500;
   color: var(--ink-3);
 }
-.plato-speech {
+.bitey-speech {
   margin: 0;
   font-size: .86rem;
   font-weight: 600;
@@ -447,13 +447,13 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   align-items: flex-start;
   transition: opacity 0.15s ease;
 }
-.plato-actions {
+.bitey-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 }
-.plato-chip {
+.bitey-chip {
   appearance: none;
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
@@ -470,14 +470,14 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   transition: background .15s ease, transform .1s ease, border-color .15s ease;
   white-space: nowrap;
 }
-.plato-chip:hover {
+.bitey-chip:hover {
   background: color-mix(in srgb, var(--accent) 22%, var(--surface));
   border-color: var(--accent);
 }
-.plato-chip:active {
+.bitey-chip:active {
   transform: scale(0.96);
 }
-.plato-chip-cal {
+.bitey-chip-cal {
   font-size: .68rem;
   font-weight: 500;
   color: var(--ink-3);

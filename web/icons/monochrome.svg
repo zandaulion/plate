@@ -3,7 +3,7 @@
     <!-- Table line -->
     <line x1="-30" y1="410" x2="542" y2="410" stroke="#FFFFFF" stroke-width="4" opacity="0.4"/>
 
-    <!-- Platosaurus Peeking -->
+    <!-- Bitey Peeking -->
     <g transform="translate(16, 8)">
       <!-- Back spines -->
       <path d="M 170 170 Q 145 180 165 210 Q 140 225 160 255 Q 142 275 162 305" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" opacity="0.6"/>
