@@ -1002,7 +1002,12 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   display: flex; gap: 10px; align-items: center;
 }
 .sheet-foot .primary { flex: 1; width: 100%; }
-.sheet-foot .secondary { flex: 0 0 auto; }
+/* width, not just flex. The base .secondary is a full-width block button and
+   is declared later in this file, so overriding flex-basis alone left it
+   claiming the whole bar and pushing Save off the right edge -- invisible
+   until an entry is opened for editing, which is the only time Duplicate is
+   shown. */
+.sheet-foot .secondary { flex: 0 0 auto; width: auto; }
 .muted-foot { background: none; text-align: center; }
 
 .review-photo {
