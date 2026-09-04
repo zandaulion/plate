@@ -1215,57 +1215,30 @@ function wiggleBitey() {
 $('bitey-card')?.addEventListener('click', onBiteyTap);
 
 /**
- * The big view.
+ * Bigger, in place.
  *
- * Its own element rather than a sheet: there is nothing to fill in and nothing
- * to save, so the machinery that guards against losing work would be dead
- * weight. It renders the same markup the card does, so anything the rig learns
- * it learns in both places at once.
+ * A full screen was the wrong size of gesture for looking at a dinosaur: it
+ * took the whole app away, needed a backdrop, a close button and an escape
+ * key, and made a small piece of delight feel like a decision. The card simply
+ * gets taller instead, which is reversible with the same tap that opened it
+ * and never hides what you were doing.
  */
-function openBiteyStage() {
-  const stage = $('bitey-stage');
-  if (!stage) return;
-  $('bitey-stage-art').innerHTML = getBiteySvg(
-    state.celebrating && Date.now() < state.celebrating.until ? 'cheer' : 'happy');
-  $('bitey-stage-say').textContent = $('bitey-speech').textContent;
-  stage.hidden = false;
-  requestAnimationFrame(() => stage.classList.add('is-open'));
-  track('bitey_stage_opened');
-}
-
-function closeBiteyStage() {
-  const stage = $('bitey-stage');
-  if (!stage || stage.hidden) return;
-  stage.classList.remove('is-open');
-  setTimeout(() => { stage.hidden = true; }, 180);
+function toggleBiteyBig() {
+  const card = $('bitey-card');
+  if (!card) return;
+  const big = card.classList.toggle('is-big');
+  $('bitey-avatar').setAttribute('aria-label', big ? 'Make Bitey smaller' : 'See Bitey bigger');
+  const hint = $('bitey-action-hint');
+  if (hint) hint.textContent = big ? 'Tap him again' : 'Tap me!';
+  track('bitey_resized', { big });
 }
 
 $('bitey-avatar')?.addEventListener('click', (ev) => {
   // The avatar sits inside the card, which is itself a button. Without this the
-  // tap would cycle the quote on the way past, and the big view would open
-  // showing a line the card had already replaced.
+  // tap would also cycle the quote on the way past.
   ev.stopPropagation();
-  openBiteyStage();
-});
-
-$('bitey-stage')?.addEventListener('click', (ev) => {
-  if (ev.target.closest('.bitey-stage-art')) {
-    // The same dance, on a figure three times the size.
-    const art = $('bitey-stage-art');
-    art.classList.remove('is-wiggling');
-    void art.offsetWidth;
-    art.classList.add('is-wiggling');
-    $('bitey-stage-say').textContent = getNextBiteyQuote();
-    try { navigator.vibrate?.(10); } catch { /* not supported */ }
-    clearTimeout(state.stageWiggleTimer);
-    state.stageWiggleTimer = setTimeout(() => art.classList.remove('is-wiggling'), 1250);
-    return;
-  }
-  closeBiteyStage();
-});
-
-document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape') closeBiteyStage();
+  toggleBiteyBig();
+  wiggleBitey();
 });
 $('bitey-card')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
