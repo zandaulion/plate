@@ -1889,3 +1889,25 @@ input[type="range"]::-moz-range-thumb {
 @media (prefers-reduced-motion: reduce) {
   .bitey-avatar-btn { transition: none; }
 }
+
+/* ------------------------------------------------------- draggable sheet */
+
+.sheet-grab {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+/* The scrim thins as the sheet is pulled away, so the day underneath comes
+   back into view while the finger is still down and the gesture reads as
+   reversible rather than committed. */
+.sheet { --sheet-drag: 0; }
+#trends { background: color-mix(in srgb, var(--ink) calc(45% * (1 - var(--sheet-drag))), transparent); }
+
+/* A dragged sheet must not also be scrolled by the same finger, and the sheet
+   must not hand the gesture up to the page as pull-to-refresh. */
+#trends-body { overscroll-behavior: contain; }
+#trends .sheet-inner { touch-action: pan-y; }

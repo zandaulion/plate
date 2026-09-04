@@ -341,6 +341,9 @@
        revocation made both harder to find. -->
   <div id="trends" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="trends-heading">
     <div class="sheet-inner">
+      <!-- Without this the gesture is invisible: a sheet you can drag looks
+           exactly like a sheet you cannot. -->
+      <div class="sheet-grab" aria-hidden="true"></div>
       <header class="sheet-head">
         <h2 id="trends-heading">Trends</h2>
         <button id="trends-close" class="icon-btn" aria-label="Close">&times;</button>

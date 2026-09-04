@@ -1648,6 +1648,87 @@ $('open-trends').addEventListener('click', () => {
 $('trends-close').addEventListener('click', closeTrends);
 $('trends').addEventListener('click', (ev) => { if (ev.target === $('trends')) closeTrends(); });
 
+/**
+ * Drag a bottom sheet down to close it.
+ *
+ * The sheet rises from the bottom edge, so pushing it back down is the gesture
+ * its own animation already suggests. It follows the finger rather than
+ * waiting for a verdict at the end: a sheet that ignores you until you let go
+ * cannot tell you whether it is going to close, and you find out by being
+ * wrong.
+ *
+ * The one thing that makes or breaks this is when *not* to take the gesture.
+ * A downward drag inside a scrolled list is a scroll, always -- so the drag
+ * only starts when the content is already at its top, which is the moment
+ * there is nothing left to scroll to.
+ */
+function initSheetSwipeDown(sheetId, scrollerId, close) {
+  const sheet = $(sheetId);
+  const inner = sheet?.querySelector('.sheet-inner');
+  const scroller = $(scrollerId);
+  if (!sheet || !inner) return;
+
+  let startY = 0;
+  let dy = 0;
+  let startedAt = 0;
+  let dragging = false;
+
+  const reset = (animated) => {
+    inner.style.transition = animated ? 'transform .2s cubic-bezier(.22,.8,.3,1)' : 'none';
+    inner.style.transform = '';
+    sheet.style.setProperty('--sheet-drag', '0');
+    if (animated) setTimeout(() => { inner.style.transition = ''; }, 220);
+  };
+
+  sheet.addEventListener('touchstart', (ev) => {
+    dragging = false;
+    if (ev.touches.length !== 1) return;
+    if (scroller && scroller.scrollTop > 0) return;
+    // A chip row scrolls sideways and a field wants its own gestures.
+    if (ev.target.closest('input, textarea, select, .chips')) return;
+    dragging = true;
+    startY = ev.touches[0].clientY;
+    dy = 0;
+    startedAt = Date.now();
+    inner.style.transition = 'none';
+  }, { passive: true });
+
+  // Not passive: an unhandled downward drag at the top of a scroller is what
+  // the browser turns into overscroll or pull-to-refresh, and either would
+  // fight the sheet for the same finger.
+  sheet.addEventListener('touchmove', (ev) => {
+    if (!dragging || ev.touches.length !== 1) return;
+    dy = ev.touches[0].clientY - startY;
+    if (dy <= 0) return;
+    ev.preventDefault();
+    // Resistance, so it never feels like the sheet has come off in your hand.
+    const pulled = dy < 220 ? dy : 220 + (dy - 220) * 0.35;
+    inner.style.transform = `translateY(${pulled}px)`;
+    sheet.style.setProperty('--sheet-drag', String(Math.min(1, pulled / 420)));
+  }, { passive: false });
+
+  sheet.addEventListener('touchend', () => {
+    if (!dragging) return;
+    dragging = false;
+    const speed = dy / Math.max(1, Date.now() - startedAt);
+    // Either far enough, or a flick that clearly meant it.
+    if (dy > 110 || (dy > 45 && speed > 0.55)) {
+      reset(false);
+      close();
+    } else {
+      reset(true);
+    }
+  }, { passive: true });
+
+  sheet.addEventListener('touchcancel', () => {
+    if (!dragging) return;
+    dragging = false;
+    reset(true);
+  }, { passive: true });
+}
+
+initSheetSwipeDown('trends', 'trends-body', closeTrends);
+
 // --------------------------------------------------------------- weigh-in
 
 // A dial and a needle, not a box with an arrow -- the first attempt read as
