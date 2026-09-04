@@ -1650,3 +1650,61 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .item.is-part .item-kcal { opacity: .85; }
+
+/* ------------------------------------------------------------ the dance */
+
+/* Fires every time something is logged, which is several times a day for
+   years. So: short, transform-only, and nothing that moves the page around it.
+   A celebration you cannot ignore becomes the next thing people ask to have
+   turned off. */
+
+.bitey-card.is-dancing .bitey-svg-wrap {
+  animation: bitey-dance 1.15s ease-in-out 3;
+  transform-origin: 50% 90%;
+}
+
+/* Weight shifts foot to foot, with a hop on the beat. Rotation and translation
+   only -- scaling the dino would fight the card's own layout. */
+@keyframes bitey-dance {
+  0%   { transform: rotate(0deg) translateY(0); }
+  15%  { transform: rotate(-9deg) translateY(-2px); }
+  30%  { transform: rotate(7deg) translateY(-6px); }
+  45%  { transform: rotate(-6deg) translateY(-1px); }
+  60%  { transform: rotate(8deg) translateY(-5px); }
+  78%  { transform: rotate(-3deg) translateY(0); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+
+/* The card acknowledges it once, quietly, rather than pulsing along. */
+.bitey-card.is-dancing {
+  animation: bitey-card-lift 0.5s ease-out;
+}
+
+@keyframes bitey-card-lift {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 34%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+/* Staggered so they read as a burst rather than three lamps switching on. */
+.bitey-sparks .spark { opacity: 0; transform-origin: center; }
+.bitey-card.is-dancing .spark { animation: bitey-spark 1.15s ease-out infinite; }
+.bitey-card.is-dancing .spark-2 { animation-delay: .22s; }
+.bitey-card.is-dancing .spark-3 { animation-delay: .44s; }
+
+@keyframes bitey-spark {
+  0%   { opacity: 0; transform: scale(.4); }
+  35%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.5) translateY(-7px); }
+}
+
+/* The words are the point; the movement is decoration. Someone who has asked
+   their phone to stop animating still gets the message, in full, with no
+   motion at all -- rather than being handed a silent card. */
+@media (prefers-reduced-motion: reduce) {
+  .bitey-card.is-dancing,
+  .bitey-card.is-dancing .bitey-svg-wrap,
+  .bitey-card.is-dancing .spark {
+    animation: none;
+  }
+  .bitey-card.is-dancing .spark { opacity: 1; }
+}

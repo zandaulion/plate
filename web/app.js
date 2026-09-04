@@ -510,9 +510,16 @@ function getBiteySvg(mood = 'happy') {
   const isNom = mood === 'nom';
   const isFull = mood === 'full';
   const isThinking = mood === 'thinking';
+  const isCheer = mood === 'cheer';
 
   let eyesSvg = '';
-  if (isNom) {
+  if (isCheer) {
+    // Squeezed-shut delight, the shape a face makes when it is not pretending.
+    eyesSvg = `
+      <path d="M 55 37 Q 60 31 65 37" fill="none" stroke="#1C241D" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M 71 36 Q 75 31 79 36" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>
+    `;
+  } else if (isNom) {
     eyesSvg = `
       <path d="M 57 37 Q 60 33 63 37" fill="none" stroke="#1C241D" stroke-width="2.5" stroke-linecap="round"/>
       <circle cx="75" cy="38" r="1.5" fill="#F59E0B"/>
@@ -542,7 +549,9 @@ function getBiteySvg(mood = 'happy') {
   }
 
   let mouthSvg = '';
-  if (isNom) {
+  if (isCheer) {
+    mouthSvg = `<path d="M 66 43 Q 72 51 78 43 Z" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linejoin="round"/>`;
+  } else if (isNom) {
     mouthSvg = `<path d="M 68 44 Q 72 49 76 45" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linecap="round"/>`;
   } else if (isFull) {
     mouthSvg = `<path d="M 67 44 Q 72 50 77 44" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>`;
@@ -567,14 +576,98 @@ function getBiteySvg(mood = 'happy') {
     <path d="M 44 60 C 44 60 52 62 60 58 C 63 68 55 74 46 72 Z" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
     <circle cx="53" cy="66" r="2.5" fill="#EF4444"/>
     <path d="M 53 63 Q 54 61 55 62" fill="none" stroke="#10B981" stroke-width="1"/>
+    ${isCheer ? `
+    <!-- Arm thrown up, fork and all -->
+    <path d="M 44 68 Q 36 62 33 52" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
+    <g transform="rotate(24 33 50)">
+      <rect x="31.5" y="38" width="3" height="13" rx="1.5" fill="#D97706"/>
+      <path d="M 29.5 38 L 29.5 33 M 32.5 38 L 32.5 32 M 35.5 38 L 35.5 33" stroke="#D97706" stroke-width="1.2" stroke-linecap="round"/>
+    </g>
+    <!-- Three sparks, staggered so they read as a burst rather than a blink -->
+    <g class="bitey-sparks" fill="#F59E0B">
+      <circle class="spark spark-1" cx="86" cy="30" r="2.4"/>
+      <circle class="spark spark-2" cx="28" cy="30" r="1.9"/>
+      <circle class="spark spark-3" cx="82" cy="62" r="1.6"/>
+    </g>` : `
     <!-- Arm -->
     <path d="M 44 68 Q 38 65 36 72" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
     <!-- Tiny wooden fork -->
     <g transform="rotate(-18 34 68)">
       <rect x="33" y="66" width="3" height="13" rx="1.5" fill="#D97706"/>
       <path d="M 31 66 L 31 61 M 34 66 L 34 60 M 37 66 L 37 61" stroke="#D97706" stroke-width="1.2" stroke-linecap="round"/>
-    </g>
+    </g>`}
   </svg>`;
+}
+
+/**
+ * A short line for the moment something is logged.
+ *
+ * Every one of these celebrates the *logging* and none of them judges the
+ * food. That is the whole rule: "great choice!" over a doughnut is either
+ * sarcasm or a lesson in shame, and an app that only cheers for salad teaches
+ * you to stop logging the rest -- which costs it the thing it exists for.
+ *
+ * Kept short because this fires several times a day, every day. A sentence you
+ * can read without stopping stays warm; a paragraph becomes wallpaper by
+ * Thursday.
+ */
+const BITEY_CHEERS = [
+  "Logged! Straight into the fossil record. 🦴",
+  "Got it. Nothing escapes a hungry dinosaur. 🦖",
+  "In the books. Bitey does a small shuffle. 🕺",
+  "Noted! My tail is wagging, for the record. 🦕",
+  "Down it goes in the log. Nice one. ✨",
+  "Caught, counted, filed. 📗",
+  "That's another one written down. 🦖",
+  "Logged it before I forgot — teamwork. 🤝",
+  "Saved. The Cretaceous never had it this easy. 🌋",
+  "One more in the pile. Steady work. 🌿",
+  "Recorded. That is the hard part done. 👏",
+  "Filed away. Back to grazing. 🌾"
+];
+
+let lastCheerIdx = -1;
+
+function nextCheer() {
+  if (!BITEY_CHEERS.length) return "Logged! 🦖";
+  let i = Math.floor(Math.random() * BITEY_CHEERS.length);
+  // Never the same line twice running: a repeat reads as a canned response and
+  // is the fastest way for this to stop meaning anything.
+  if (i === lastCheerIdx && BITEY_CHEERS.length > 1) i = (i + 1) % BITEY_CHEERS.length;
+  lastCheerIdx = i;
+  return BITEY_CHEERS[i];
+}
+
+const CHEER_MS = 3600;
+
+/**
+ * The little dance, after something is logged.
+ *
+ * Holds the companion for a few seconds so the ordinary render that follows a
+ * save does not wipe it -- the same guard the quick-bite munch already uses,
+ * and for the same reason. Everything is a transform, so nothing on the page
+ * moves around it.
+ */
+function celebrateEntry() {
+  const card = $('bitey-card');
+  const wrap = $('bitey-svg-wrap');
+  const speech = $('bitey-speech');
+  if (!card || !wrap || !speech) return;
+
+  state.celebrating = { until: Date.now() + CHEER_MS, text: nextCheer() };
+  state.lastCheerText = state.celebrating.text;
+  wrap.innerHTML = getBiteySvg('cheer');
+  speech.textContent = state.celebrating.text;
+  card.classList.add('is-dancing');
+  try { navigator.vibrate?.([12, 40, 12]); } catch { /* not supported, no matter */ }
+
+  clearTimeout(state.celebrateTimer);
+  state.celebrateTimer = setTimeout(() => {
+    card.classList.remove('is-dancing');
+    state.celebrating = null;
+    // Back to whatever the day actually has to say.
+    updateBiteyCompanion(state.lastSummary, state.lastSplit, state.lastEntries);
+  }, CHEER_MS);
 }
 
 const BITEY_QUOTES = [
@@ -753,6 +846,21 @@ function updateBiteyCompanion(summary, split = null, entries = []) {
   const actionsEl = $('bitey-actions');
   if (!wrap || !speech) return;
 
+  // Remembered so the celebration can hand back to the real state when it ends,
+  // rather than leaving the last cheer sitting there until the next reload.
+  state.lastSummary = summary;
+  state.lastSplit = split;
+  state.lastEntries = entries;
+
+  // Saving triggers a reload of the day, which lands here a moment later and
+  // would otherwise wipe the dance before it finished.
+  if (state.celebrating && Date.now() < state.celebrating.until) {
+    wrap.innerHTML = getBiteySvg('cheer');
+    speech.textContent = state.celebrating.text;
+    if (actionsEl) { actionsEl.hidden = true; actionsEl.innerHTML = ''; }
+    return;
+  }
+
   if (state.lastBiteMunchTime && (Date.now() - state.lastBiteMunchTime < 4500)) {
     wrap.innerHTML = getBiteySvg('nom');
     speech.textContent = state.lastBiteName
@@ -804,14 +912,19 @@ function updateBiteyCompanion(summary, split = null, entries = []) {
   // Bitey was still reporting yesterday's fats. The text is only left
   // alone when it is one of the idle quotes, which cycle on their own timer and
   // would restart on every render otherwise.
+  // The cheer counts as stale too. The guard below exists to protect the idle
+  // quotes from being restarted on every render, and it was quietly protecting
+  // the celebration as well -- so "Logged it before I forgot" sat on the card
+  // until the next reload, long after the dance had finished.
   const stale = state.activeBiteyRecommendation?.text || null;
+  const spent = state.lastCheerText || null;
   state.activeBiteyRecommendation = null;
   if (actionsEl) {
     actionsEl.hidden = true;
     actionsEl.innerHTML = '';
   }
 
-  if (!speech.textContent || speech.textContent === stale
+  if (!speech.textContent || speech.textContent === stale || speech.textContent === spent
       || speech.textContent === 'Rawr! What are we eating today?') {
     speech.textContent = getNextBiteyQuote();
   }
@@ -2862,6 +2975,7 @@ $('save-entry').addEventListener('click', async () => {
     state.openedAs = null;
     closeReview();
     toast(state.mode === 'edit' ? 'Updated' : 'Logged');
+    if (state.mode !== 'edit') celebrateEntry();
     await loadDay();
   } catch (err) {
     failed(err.message);
