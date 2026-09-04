@@ -506,96 +506,93 @@ function renderQuickBiteTray(recents) {
   container.innerHTML = presetHtml + recentHtml + customHtml;
 }
 
+/**
+ * Bitey, as separate parts rather than one drawing.
+ *
+ * The old figure was a single silhouette in a 100x100 box, filling 34% of it,
+ * which at the 48px he renders at came to roughly 30px of ink -- a green blob
+ * with a suggestion of an eye. This one is cut to its own bounding box and
+ * built from named groups, so CSS can move a piece at a time.
+ *
+ * That matters more than detail does at this size. A blob that blinks reads as
+ * alive; a beautifully drawn blob is still a blob. So the effort goes into
+ * pieces that can move -- head, jaw, eye, arm, tail, body -- and the mood
+ * changes only the face and where the arm is pointing, both of which are
+ * cheap.
+ */
 function getBiteySvg(mood = 'happy') {
-  const isNom = mood === 'nom';
-  const isFull = mood === 'full';
-  const isThinking = mood === 'thinking';
-  const isCheer = mood === 'cheer';
+  const eye = {
+    // Squeezed shut with delight, and the shape a face makes when it means it.
+    cheer: `<path d="M54 19 Q 59 13 64 19" fill="none" stroke="#1C241D" stroke-width="2.8" stroke-linecap="round"/>`,
+    // Mid-chew: one eye scrunched, the other watching the fork.
+    nom: `<path d="M55 19 Q 59 15 63 19" fill="none" stroke="#1C241D" stroke-width="2.6" stroke-linecap="round"/>`,
+    full: `<path d="M54 19 Q 59 15 64 19" fill="none" stroke="#1C241D" stroke-width="2.4" stroke-linecap="round"/>`,
+    thinking: `<path d="M54 10 Q 59 7 64 10" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>
+      <ellipse cx="59" cy="18" rx="3.9" ry="5.2" fill="#1C241D"/>
+      <circle cx="60.6" cy="15.8" r="1.8" fill="#FFFFFF"/>
+      <circle cx="57.6" cy="20.2" r="0.9" fill="#FFFFFF"/>`
+  }[mood] || `<ellipse cx="59" cy="18" rx="4.2" ry="5.4" fill="#1C241D"/>
+      <circle cx="60.8" cy="15.8" r="1.9" fill="#FFFFFF"/>
+      <circle cx="57.6" cy="20.2" r="0.95" fill="#FFFFFF"/>`;
 
-  let eyesSvg = '';
-  if (isCheer) {
-    // Squeezed-shut delight, the shape a face makes when it is not pretending.
-    eyesSvg = `
-      <path d="M 55 37 Q 60 31 65 37" fill="none" stroke="#1C241D" stroke-width="2.6" stroke-linecap="round"/>
-      <path d="M 71 36 Q 75 31 79 36" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>
-    `;
-  } else if (isNom) {
-    eyesSvg = `
-      <path d="M 57 37 Q 60 33 63 37" fill="none" stroke="#1C241D" stroke-width="2.5" stroke-linecap="round"/>
-      <circle cx="75" cy="38" r="1.5" fill="#F59E0B"/>
-      <circle cx="79" cy="42" r="1" fill="#F59E0B"/>
-    `;
-  } else if (isFull) {
-    eyesSvg = `
-      <path d="M 56 37 Q 60 33 64 37" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>
-    `;
-  } else if (isThinking) {
-    eyesSvg = `
-      <!-- Thoughtful raised brow and curious eyes -->
-      <path d="M 56 30 Q 60 27 64 29" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>
-      <ellipse cx="60" cy="35" rx="3.8" ry="5.2" fill="#1C241D"/>
-      <circle cx="61.5" cy="33" r="1.8" fill="#FFFFFF"/>
-      <circle cx="58.5" cy="37" r="0.8" fill="#FFFFFF"/>
-      <!-- Lightbulb idea spark -->
-      <circle cx="76" cy="27" r="2.2" fill="#F59E0B"/>
-      <path d="M 76 22 L 76 20 M 72 24 L 70 23 M 80 24 L 82 23" stroke="#F59E0B" stroke-width="1.4" stroke-linecap="round"/>
-    `;
-  } else {
-    eyesSvg = `
-      <ellipse cx="60" cy="36" rx="4.2" ry="5.5" fill="#1C241D"/>
-      <circle cx="61.5" cy="34" r="1.8" fill="#FFFFFF"/>
-      <circle cx="58.5" cy="38" r="0.8" fill="#FFFFFF"/>
-    `;
-  }
+  const jaw = {
+    cheer: `<path d="M65 26 Q 71 33 76 25 Z" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linejoin="round"/>`,
+    nom: `<path d="M66 26 Q 71 32 75 26 Z" fill="#DC2626" stroke="#1C241D" stroke-width="1.7" stroke-linejoin="round"/>`,
+    full: `<path d="M67 27 Q 71 30 75 27" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>`,
+    thinking: `<path d="M67 28 Q 70 26 74 28" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`
+  }[mood] || `<path d="M67 27 Q 71 31 75 25" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
 
-  let mouthSvg = '';
-  if (isCheer) {
-    mouthSvg = `<path d="M 66 43 Q 72 51 78 43 Z" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linejoin="round"/>`;
-  } else if (isNom) {
-    mouthSvg = `<path d="M 68 44 Q 72 49 76 45" fill="#DC2626" stroke="#1C241D" stroke-width="1.8" stroke-linecap="round"/>`;
-  } else if (isFull) {
-    mouthSvg = `<path d="M 67 44 Q 72 50 77 44" fill="none" stroke="#1C241D" stroke-width="2.2" stroke-linecap="round"/>`;
-  } else if (isThinking) {
-    mouthSvg = `<path d="M 68 45 Q 71 43 75 45" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
-  } else {
-    mouthSvg = `<path d="M 68 44 Q 72 48 75 43" fill="none" stroke="#1C241D" stroke-width="2" stroke-linecap="round"/>`;
-  }
+  const extras = mood === 'thinking'
+    ? `<circle cx="78" cy="8" r="2.4" fill="#F59E0B"/>
+       <path d="M78 3 V 1 M73.5 5 L 72 4 M82.5 5 L 84 4" stroke="#F59E0B" stroke-width="1.4" stroke-linecap="round"/>`
+    : mood === 'cheer'
+      ? `<g class="b-sparks" fill="#F59E0B">
+           <circle class="spark spark-1" cx="76" cy="7" r="2.3"/>
+           <circle class="spark spark-2" cx="35" cy="14" r="1.8"/>
+           <circle class="spark spark-3" cx="74" cy="40" r="1.5"/>
+         </g>`
+      : '';
 
-  return `<svg viewBox="0 0 100 100" class="bitey-dino-svg" xmlns="http://www.w3.org/2000/svg">
-    <!-- Dino back spikes -->
-    <path d="M 22 45 Q 16 48 22 55 Q 15 58 22 65" fill="none" stroke="#F59E0B" stroke-width="5" stroke-linecap="round"/>
-    <!-- Head & neck -->
-    <path d="M 32 78 C 30 65 30 45 42 32 C 52 22 72 24 78 35 C 84 44 80 56 68 58 C 60 59 55 68 54 78 Z" fill="#38A169"/>
-    <!-- Belly highlight -->
-    <path d="M 48 48 C 54 44 65 44 68 52 C 60 56 55 68 54 78 C 50 78 48 70 48 48 Z" fill="#6EE7B7" opacity="0.65"/>
-    <!-- Cheeks -->
-    <circle cx="66" cy="46" r="4.5" fill="#F43F5E" opacity="0.45"/>
-    ${eyesSvg}
-    ${mouthSvg}
-    <!-- Bib around neck -->
-    <path d="M 44 60 C 44 60 52 62 60 58 C 63 68 55 74 46 72 Z" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5"/>
-    <circle cx="53" cy="66" r="2.5" fill="#EF4444"/>
-    <path d="M 53 63 Q 54 61 55 62" fill="none" stroke="#10B981" stroke-width="1"/>
-    ${isCheer ? `
-    <!-- Arm thrown up, fork and all -->
-    <path d="M 44 68 Q 36 62 33 52" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
-    <g transform="rotate(24 33 50)">
-      <rect x="31.5" y="38" width="3" height="13" rx="1.5" fill="#D97706"/>
-      <path d="M 29.5 38 L 29.5 33 M 32.5 38 L 32.5 32 M 35.5 38 L 35.5 33" stroke="#D97706" stroke-width="1.2" stroke-linecap="round"/>
+  return `<svg viewBox="0 0 86 66" class="bitey-dino-svg" data-mood="${mood}" xmlns="http://www.w3.org/2000/svg">
+    <g class="b-tail">
+      <path d="M33 50 C 24 54 16 55 10 51" fill="none" stroke="#2F855A" stroke-width="7.5" stroke-linecap="round"/>
+      <path d="M18 53 C 14 53 11 52 9 50" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
     </g>
-    <!-- Three sparks, staggered so they read as a burst rather than a blink -->
-    <g class="bitey-sparks" fill="#F59E0B">
-      <circle class="spark spark-1" cx="86" cy="30" r="2.4"/>
-      <circle class="spark spark-2" cx="28" cy="30" r="1.9"/>
-      <circle class="spark spark-3" cx="82" cy="62" r="1.6"/>
-    </g>` : `
-    <!-- Arm -->
-    <path d="M 44 68 Q 38 65 36 72" fill="none" stroke="#2F855A" stroke-width="4" stroke-linecap="round"/>
-    <!-- Tiny wooden fork -->
-    <g transform="rotate(-18 34 68)">
-      <rect x="33" y="66" width="3" height="13" rx="1.5" fill="#D97706"/>
-      <path d="M 31 66 L 31 61 M 34 66 L 34 60 M 37 66 L 37 61" stroke="#D97706" stroke-width="1.2" stroke-linecap="round"/>
-    </g>`}
+    <g class="b-legs">
+      <path d="M38 55 L 37 60" stroke="#2F855A" stroke-width="8" stroke-linecap="round"/>
+      <path d="M51 55 L 53 60" stroke="#38A169" stroke-width="8" stroke-linecap="round"/>
+      <path d="M31 62 h 9 a 3 3 0 0 0 0 -3 h -6 a 3 3 0 0 0 -3 3 z" fill="#2F855A"/>
+      <path d="M48 62 h 9 a 3 3 0 0 0 0 -3 h -6 a 3 3 0 0 0 -3 3 z" fill="#38A169"/>
+    </g>
+    <g class="b-body">
+      <path d="M35 56 C 31 46 32 36 39 31 C 45 26 53 27 56 33 C 61 38 62 48 58 54 C 53 59 41 60 35 56 Z" fill="#38A169"/>
+      <path d="M47 31 C 55 31 61 40 60 48 C 59 54 53 58 46 58 C 52 49 52 39 47 31 Z" fill="#6EE7B7" opacity=".5"/>
+    </g>
+    <g class="b-spikes" fill="#F59E0B">
+      <path d="M37 30 L 31 35 L 38 36 Z"/>
+      <path d="M34 39 L 28 44 L 35 45 Z"/>
+    </g>
+    <g class="b-head">
+      <path d="M41 22 C 40 12 48 5 58 5 C 70 5 77 12 76 21 C 75 29 67 34 58 33 C 48 33 42 29 41 22 Z" fill="#38A169"/>
+      <path d="M67 25 C 72 24 76 25 76 27 C 75 30 71 31 68 30 Z" fill="#2F855A" opacity=".3"/>
+      <circle cx="51" cy="26" r="3.6" fill="#F43F5E" opacity=".38"/>
+      <g class="b-eye">${eye}</g>
+      <g class="b-jaw">${jaw}</g>
+      ${extras}
+    </g>
+    <g class="b-bib">
+      <path d="M40 38 C 46 42 54 41 58 38 C 60 46 54 52 46 51 C 41 50 39 44 40 38 Z" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.4"/>
+      <circle cx="49" cy="45" r="2.7" fill="#EF4444"/>
+      <path d="M49 42 Q 50.6 40 52 41.4" fill="none" stroke="#10B981" stroke-width="1.3" stroke-linecap="round"/>
+    </g>
+    <g class="b-arm">
+      <path d="M56 41 Q 63 43 67 48" fill="none" stroke="#2F855A" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="67.5" cy="48.5" r="3.4" fill="#2F855A"/>
+      <g transform="rotate(14 67.5 48.5)">
+        <rect x="66.1" y="36" width="2.8" height="14" rx="1.4" fill="#D97706"/>
+        <path d="M64.4 36.5 V 32 M67.5 36.5 V 31 M70.6 36.5 V 32" stroke="#D97706" stroke-width="1.4" stroke-linecap="round"/>
+      </g>
+    </g>
   </svg>`;
 }
 
@@ -1216,6 +1213,60 @@ function wiggleBitey() {
   state.wiggleTimer = setTimeout(() => card.classList.remove('is-wiggling'), 1250);
 }
 $('bitey-card')?.addEventListener('click', onBiteyTap);
+
+/**
+ * The big view.
+ *
+ * Its own element rather than a sheet: there is nothing to fill in and nothing
+ * to save, so the machinery that guards against losing work would be dead
+ * weight. It renders the same markup the card does, so anything the rig learns
+ * it learns in both places at once.
+ */
+function openBiteyStage() {
+  const stage = $('bitey-stage');
+  if (!stage) return;
+  $('bitey-stage-art').innerHTML = getBiteySvg(
+    state.celebrating && Date.now() < state.celebrating.until ? 'cheer' : 'happy');
+  $('bitey-stage-say').textContent = $('bitey-speech').textContent;
+  stage.hidden = false;
+  requestAnimationFrame(() => stage.classList.add('is-open'));
+  track('bitey_stage_opened');
+}
+
+function closeBiteyStage() {
+  const stage = $('bitey-stage');
+  if (!stage || stage.hidden) return;
+  stage.classList.remove('is-open');
+  setTimeout(() => { stage.hidden = true; }, 180);
+}
+
+$('bitey-avatar')?.addEventListener('click', (ev) => {
+  // The avatar sits inside the card, which is itself a button. Without this the
+  // tap would cycle the quote on the way past, and the big view would open
+  // showing a line the card had already replaced.
+  ev.stopPropagation();
+  openBiteyStage();
+});
+
+$('bitey-stage')?.addEventListener('click', (ev) => {
+  if (ev.target.closest('.bitey-stage-art')) {
+    // The same dance, on a figure three times the size.
+    const art = $('bitey-stage-art');
+    art.classList.remove('is-wiggling');
+    void art.offsetWidth;
+    art.classList.add('is-wiggling');
+    $('bitey-stage-say').textContent = getNextBiteyQuote();
+    try { navigator.vibrate?.(10); } catch { /* not supported */ }
+    clearTimeout(state.stageWiggleTimer);
+    state.stageWiggleTimer = setTimeout(() => art.classList.remove('is-wiggling'), 1250);
+    return;
+  }
+  closeBiteyStage();
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') closeBiteyStage();
+});
 $('bitey-card')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
