@@ -1675,6 +1675,13 @@ input[type="range"]::-moz-range-thumb {
   100% { transform: rotate(0deg) translateY(0); }
 }
 
+/* A tap gets one turn of the same dance. The pose does not change -- he is
+   being played with, not congratulated -- so only the movement is borrowed. */
+.bitey-card.is-wiggling .bitey-svg-wrap {
+  animation: bitey-dance 1.15s ease-in-out 1;
+  transform-origin: 50% 90%;
+}
+
 /* The card acknowledges it once, quietly, rather than pulsing along. */
 .bitey-card.is-dancing {
   animation: bitey-card-lift 0.5s ease-out;
@@ -1703,7 +1710,8 @@ input[type="range"]::-moz-range-thumb {
 @media (prefers-reduced-motion: reduce) {
   .bitey-card.is-dancing,
   .bitey-card.is-dancing .bitey-svg-wrap,
-  .bitey-card.is-dancing .spark {
+  .bitey-card.is-dancing .spark,
+  .bitey-card.is-wiggling .bitey-svg-wrap {
     animation: none;
   }
   .bitey-card.is-dancing .spark { opacity: 1; }

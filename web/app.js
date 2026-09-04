@@ -1181,11 +1181,40 @@ $('bitey-actions')?.addEventListener('click', async (ev) => {
   }
 });
 
+/**
+ * A tap makes him dance, and say the next thing he was going to say anyway.
+ *
+ * One turn of the dance rather than the three a save gets, and no cheer line:
+ * a tap is not an achievement, and borrowing "Logged!" for it would make the
+ * word mean nothing by the time something actually is. The words stay the idle
+ * quotes, so the only new thing here is that he moves.
+ */
 const onBiteyTap = (ev) => {
   if (ev?.target?.closest?.('.bitey-chip')) return;
   cycleBiteyMessage(null, true);
   startBiteyCycle();
+  wiggleBitey();
 };
+
+/**
+ * Restartable, because tapping twice should dance twice.
+ *
+ * Removing the class is not enough on its own: the browser coalesces the
+ * removal and the re-add into one style recalculation and sees no change, so
+ * the animation never restarts. Reading offsetWidth in between forces the
+ * reflow that makes them two separate states -- the same trick the day-change
+ * hop already uses on the avatar.
+ */
+function wiggleBitey() {
+  const card = $('bitey-card');
+  if (!card || card.classList.contains('is-dancing')) return;  // a save is mid-celebration
+  card.classList.remove('is-wiggling');
+  void card.offsetWidth;
+  card.classList.add('is-wiggling');
+  try { navigator.vibrate?.(10); } catch { /* not supported, no matter */ }
+  clearTimeout(state.wiggleTimer);
+  state.wiggleTimer = setTimeout(() => card.classList.remove('is-wiggling'), 1250);
+}
 $('bitey-card')?.addEventListener('click', onBiteyTap);
 $('bitey-card')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
