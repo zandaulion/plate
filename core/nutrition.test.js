@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   basalRate, maintenanceEnergy, activityFactor,
-  sumMacros, caloriesFromMacros, macroAgreement, KCAL_PER_G, missingForMaintenance
+  sumMacros, caloriesFromMacros, macroAgreement, KCAL_PER_G, missingForMaintenance,
+  ageFromBirthYear
 } from './nutrition.js';
 
 test('basalRate matches Mifflin-St Jeor worked examples', () => {
@@ -94,4 +95,25 @@ test('an unrecognised activity counts as missing rather than passing through', (
   const p = { weightKg: 80, heightCm: 180, ageYears: 30, activity: 'occasionally' };
   assert.deepEqual(missingForMaintenance(p).map((f) => f.id), ['activity']);
   assert.equal(maintenanceEnergy(p), null);
+});
+
+test('age comes from the birth year and today, not from what was typed once', () => {
+  // The whole point: the same stored fact yields a different age each year,
+  // where a stored age would have stayed put.
+  assert.equal(ageFromBirthYear(1979, new Date('2026-06-01')), 47);
+  assert.equal(ageFromBirthYear(1979, new Date('2027-06-01')), 48);
+  assert.equal(ageFromBirthYear(2000, new Date('2026-06-01')), 26);
+});
+
+test('a birth year that cannot be one is refused rather than guessed at', () => {
+  assert.equal(ageFromBirthYear(null), null);
+  assert.equal(ageFromBirthYear(''), null);
+  assert.equal(ageFromBirthYear('not a year'), null);
+  assert.equal(ageFromBirthYear(2030, new Date('2026-06-01')), null, 'not born yet');
+  assert.equal(ageFromBirthYear(1850, new Date('2026-06-01')), null, 'older than the cap');
+});
+
+test('the profile banner asks for the birth year, since that is the field now', () => {
+  const missing = missingForMaintenance({ weightKg: 80, heightCm: 180, activity: 'moderate' });
+  assert.deepEqual(missing.map((f) => f.label), ['your birth year']);
 });

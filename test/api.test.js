@@ -1740,3 +1740,45 @@ test('an unconfigured server refuses admin rather than opening it', async () => 
   assert.equal(res.status, 403);
   process.env.ADMIN_TOKEN = saved;
 });
+
+test('a birth year is stored, and the age it produces comes back with it', async () => {
+  const { auth } = await registerDevice();
+  const res = await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 82, heightCm: 180, birthYear: 1979, sex: 'male', activity: 'sedentary' })
+  });
+  assert.equal(res.status, 200);
+
+  const me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.profile.birthYear, 1979);
+  assert.equal(me.profile.ageYears, new Date().getFullYear() - 1979,
+    'the age is derived from today, not stored');
+  assert.ok(me.maintenance?.kcal > 0, 'and still feeds the estimate');
+});
+
+test('a client that only knows about ages still writes something that stays true', async () => {
+  // The Android build has not been updated. Sending an age must land as the
+  // birth year it implies, not as a number that will be wrong next year.
+  const { auth } = await registerDevice();
+  await api('/api/profile', {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({ weightKg: 82, heightCm: 180, ageYears: 46, activity: 'sedentary' })
+  });
+
+  const me = await (await api('/api/me', { headers: auth })).json();
+  assert.equal(me.profile.birthYear, new Date().getFullYear() - 46);
+  assert.equal(me.profile.ageYears, 46);
+});
+
+test('a birth year nobody could have is refused, not clamped', async () => {
+  const { auth } = await registerDevice();
+  for (const birthYear of [2030, 1700, new Date().getFullYear()]) {
+    const res = await api('/api/profile', {
+      method: 'PUT', headers: auth, body: JSON.stringify({ birthYear })
+    });
+    assert.equal(res.status, 400, `expected ${birthYear} to be rejected`);
+    const body = await res.json();
+    assert.ok(String(body.message || body.fields || '').includes('birthYear')
+      || (body.fields || []).includes('birthYear'), 'and names the field');
+  }
+});

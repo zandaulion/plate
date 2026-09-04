@@ -34,7 +34,7 @@ import {
   charge, refund, BudgetError, MAX_CORRECTIONS,
   cachedAnalysis, cacheAnalysis, forgetPhoto
 } from './budget.js';
-import { maintenanceEnergy, ACTIVITY_LEVELS } from '../core/nutrition.js';
+import { maintenanceEnergy, ACTIVITY_LEVELS, ageFromBirthYear } from '../core/nutrition.js';
 import { summariseDay, macroSplit, MEALS } from '../core/day.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -205,9 +205,16 @@ export const DIETARY_GOALS = [
 function profileFor(accountId) {
   const row = db.prepare('SELECT * FROM profiles WHERE account_id = ?').get(accountId);
   if (!row) return null;
+  // Age is derived, never read from storage: the stored one was true only on
+  // the day it was typed. birth_year is the fact; ageYears is still handed to
+  // the client because everything downstream -- the Mifflin-St Jeor term, the
+  // "what is still missing" list, the Android port -- speaks in years.
+  const ageYears = ageFromBirthYear(row.birth_year);
   return {
     weightKg: row.weight_kg, heightCm: row.height_cm,
-    ageYears: row.age_years, sex: row.sex, activity: row.activity,
+    birthYear: row.birth_year ?? null,
+    ageYears,
+    sex: row.sex, activity: row.activity,
     diet: row.diet || 'omnivore',
     dietaryGoal: row.dietary_goal || 'balanced',
     updatedAt: row.updated_at
@@ -264,7 +271,21 @@ app.put('/api/profile', requireDevice, (req, res) => {
 
   const weightKg = given('weightKg') ? num(b.weightKg) : (current.weightKg ?? null);
   const heightCm = given('heightCm') ? num(b.heightCm) : (current.heightCm ?? null);
-  const ageYears = given('ageYears') ? num(b.ageYears) : (current.ageYears ?? null);
+  // Either shape is accepted. A birth year wins where both are sent, and a
+  // bare age is converted on the way in rather than stored, so a client that
+  // has not been updated yet still writes something that stays true.
+  let birthYear;
+  if (given('birthYear')) {
+    birthYear = num(b.birthYear);
+  } else if (given('ageYears')) {
+    // Explicit here means explicit: a null clears the field rather than
+    // falling back to what was stored, which is what "given" is for.
+    const age = num(b.ageYears);
+    birthYear = age === null ? null : new Date().getFullYear() - age;
+  } else {
+    birthYear = current.birthYear ?? null;
+  }
+  const ageYears = ageFromBirthYear(birthYear);
   const sex = given('sex')
     ? (['male', 'female'].includes(b.sex) ? b.sex : null)
     : (current.sex ?? null);
@@ -284,20 +305,25 @@ app.put('/api/profile', requireDevice, (req, res) => {
   const bad = [];
   if (weightKg !== null && !(weightKg > 20 && weightKg < 400)) bad.push('weightKg');
   if (heightCm !== null && !(heightCm > 90 && heightCm < 260)) bad.push('heightCm');
-  if (ageYears !== null && !(ageYears >= 13 && ageYears <= 120)) bad.push('ageYears');
+  if (birthYear !== null && !(ageYears !== null && ageYears >= 13 && ageYears <= 120)) {
+    bad.push('birthYear');
+  }
   if (bad.length) {
     return res.status(400).json({ error: 'out_of_range', fields: bad });
   }
 
   db.prepare(`
-    INSERT INTO profiles (account_id, weight_kg, height_cm, age_years, sex, activity, diet, dietary_goal, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO profiles (account_id, weight_kg, height_cm, birth_year, age_years,
+                          sex, activity, diet, dietary_goal, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id) DO UPDATE SET
       weight_kg = excluded.weight_kg, height_cm = excluded.height_cm,
-      age_years = excluded.age_years, sex = excluded.sex,
+      birth_year = excluded.birth_year, age_years = excluded.age_years,
+      sex = excluded.sex,
       activity = excluded.activity, diet = excluded.diet,
       dietary_goal = excluded.dietary_goal, updated_at = excluded.updated_at
-  `).run(req.device.account_id, weightKg, heightCm, ageYears, sex, activity, diet, dietaryGoal, nowIso());
+  `).run(req.device.account_id, weightKg, heightCm, birthYear, ageYears,
+         sex, activity, diet, dietaryGoal, nowIso());
 
   const profile = profileFor(req.device.account_id);
   const effective = effectiveProfile(req.device.account_id);

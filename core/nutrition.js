@@ -30,6 +30,27 @@ export function activityFactor(id) {
  * exactly the average of the two and is off by at most 83 kcal either way --
  * smaller than the equation's own error on an individual.
  */
+/**
+ * Age from a birth year.
+ *
+ * The year is the fact; the age is a consequence of it and today's date. Ages
+ * were stored directly until this, which meant a number that was true on the
+ * day it was typed and quietly wrong on every day after -- someone who entered
+ * 46 stayed 46 for as long as they used the app, and their maintenance figure
+ * drifted with them.
+ *
+ * Rounded down to the year, without a birth date: the error is at most one
+ * year, worth 5 kcal in Mifflin-St Jeor, which is far inside the equation's
+ * own margin. Asking for a full date of birth to recover those 5 kcal would be
+ * collecting an identifier for nothing.
+ */
+export function ageFromBirthYear(birthYear, on = new Date()) {
+  const year = Number(birthYear);
+  if (!Number.isFinite(year)) return null;
+  const age = on.getFullYear() - year;
+  return age >= 0 && age <= 120 ? age : null;
+}
+
 export function basalRate(profile) {
   const { weightKg, heightCm, ageYears, sex } = profile || {};
   if (![weightKg, heightCm, ageYears].every((v) => Number.isFinite(v) && v > 0)) return null;
@@ -78,7 +99,7 @@ export function maintenanceEnergy(profile) {
 export const MAINTENANCE_FIELDS = [
   { id: 'weightKg', label: 'weight' },
   { id: 'heightCm', label: 'height' },
-  { id: 'ageYears', label: 'age' },
+  { id: 'ageYears', label: 'your birth year' },
   { id: 'activity', label: 'how active you are' }
 ];
 

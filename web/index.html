@@ -357,8 +357,11 @@
         <div class="field-row">
           <label for="p-height">Height<span class="unit-tag">cm</span>
             <input id="p-height" type="number" inputmode="numeric" min="90" max="260" step="1"></label>
-          <label for="p-age">Age<span class="unit-tag">years</span>
-            <input id="p-age" type="number" inputmode="numeric" min="13" max="120" step="1"></label>
+          <!-- The year, not the age. An age is right once and wrong every year
+               afterwards; the year keeps the maintenance estimate honest
+               without anyone having to remember to update it. -->
+          <label for="p-birth-year">Born<span id="p-age-hint" class="unit-tag">year</span>
+            <input id="p-birth-year" type="number" inputmode="numeric" step="1"></label>
         </div>
 
         <label for="p-sex">Sex

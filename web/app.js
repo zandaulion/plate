@@ -9,7 +9,7 @@ import {
   addManualItem, hasPhotoItems, markWeighed, portionSourceOf
 } from '/core/analysis/estimate.js';
 import { toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
-import { macroAgreement } from '/core/nutrition.js';
+import { macroAgreement, ageFromBirthYear } from '/core/nutrition.js';
 import { localDayKey } from '/core/day.js';
 import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
@@ -687,6 +687,41 @@ function startPlatoCycle() {
     cyclePlatoMessage();
   }, 20000);
 }
+
+const BIRTH_YEAR_DEFAULT = 2000;
+
+/**
+ * Puts the birth year in the field, and says what it works out to.
+ *
+ * A year is harder to sanity-check than an age -- 1979 is just a number until
+ * you subtract it -- so the label carries the age it produces and updates as
+ * the field is typed in. That is also the check that catches a typo: nobody
+ * misses "126 years old".
+ *
+ * The 2000 default is only offered to someone who has never set one. Filling
+ * it in for an existing profile would replace a real answer with a guess, and
+ * leaving it blank for a new one makes the stepper start at some arbitrary
+ * floor.
+ */
+function fillBirthYear(stored) {
+  const input = $('p-birth-year');
+  if (!input) return;
+  const now = new Date().getFullYear();
+  input.min = now - 120;
+  input.max = now - 13;
+  input.value = stored ?? BIRTH_YEAR_DEFAULT;
+  showDerivedAge();
+}
+
+function showDerivedAge() {
+  const hint = $('p-age-hint');
+  const input = $('p-birth-year');
+  if (!hint || !input) return;
+  const age = ageFromBirthYear(input.value);
+  hint.textContent = age === null || age < 0 ? 'year' : `${age} yrs`;
+}
+
+$('p-birth-year')?.addEventListener('input', showDerivedAge);
 
 function updatePlatoCompanion(summary, split = null, entries = []) {
   const wrap = $('plato-svg-wrap');
@@ -2688,9 +2723,13 @@ function fillProfile() {
       .map((g) => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join('');
   }
 
+  // Ahead of the early return: someone with no profile at all is exactly who
+  // the 2000 default is for, and they are the one case that used to fall
+  // through here with an empty field and no bounds on it.
+  fillBirthYear(p?.birthYear ?? null);
+
   if (!p) return;
   $('p-height').value = p.heightCm ?? '';
-  $('p-age').value = p.ageYears ?? '';
   $('p-sex').value = p.sex ?? '';
   if (p.activity) $('p-activity').value = p.activity;
   if (p.diet && $('p-diet')) $('p-diet').value = p.diet;
@@ -2709,8 +2748,8 @@ function showMaintenanceResult(m, usedKg) {
   if (!m) {
     el.className = 'maintenance none';
     el.textContent = usedKg
-      ? 'Fill in height, age and a typical week to see an estimate.'
-      : 'Log a weight below, and fill in height, age and a typical week.';
+      ? 'Fill in height, birth year and a typical week to see an estimate.'
+      : 'Log a weight below, and fill in height, birth year and a typical week.';
     return;
   }
   el.className = 'maintenance';
@@ -2759,7 +2798,7 @@ $('profile-form').addEventListener('submit', async (ev) => {
       // from a weigh-in.
       body: JSON.stringify({
         heightCm: $('p-height').value || null,
-        ageYears: $('p-age').value || null,
+        birthYear: $('p-birth-year').value || null,
         sex: $('p-sex').value || null,
         activity: $('p-activity').value || null,
         diet: $('p-diet')?.value || 'omnivore',

@@ -218,6 +218,35 @@ addColumnIfMissing('profiles', 'diet', "TEXT NOT NULL DEFAULT 'omnivore'");
 addColumnIfMissing('profiles', 'dietary_goal', "TEXT NOT NULL DEFAULT 'balanced'");
 
 /**
+ * Birth year replaces a stored age.
+ *
+ * An age is only true on the day it is typed. Someone who entered 46 stayed 46
+ * for as long as they used the app, and the maintenance estimate they were
+ * measuring themselves against drifted a little further from them every year,
+ * silently and in the direction of overestimating.
+ *
+ * The backfill reads the age from the row that recorded it, against the date
+ * that row was written -- not against today, which would age everybody by
+ * however long they had been away. It is accurate to the year, since a birth
+ * date was never collected and is not worth collecting for a 5 kcal term.
+ *
+ * age_years is kept and kept up to date on write, so rolling the image back to
+ * a build that reads the column still works. Nothing reads it now.
+ */
+if (addColumnIfMissing('profiles', 'birth_year', 'INTEGER')) {
+  const rows = db.prepare(
+    'SELECT account_id, age_years, updated_at FROM profiles WHERE age_years IS NOT NULL'
+  ).all();
+  const set = db.prepare('UPDATE profiles SET birth_year = ? WHERE account_id = ?');
+  for (const r of rows) {
+    const recordedIn = new Date(r.updated_at).getFullYear();
+    if (!Number.isFinite(recordedIn)) continue;
+    set.run(recordedIn - r.age_years, r.account_id);
+  }
+  if (rows.length) console.log(`migrated ${rows.length} profile(s): age -> birth year`);
+}
+
+/**
  * Widens invites so the shared invite console can front this app.
  *
  * The console needs an id to act on, an expiry to display, a revoked flag, and
