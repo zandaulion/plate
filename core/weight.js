@@ -34,16 +34,33 @@ export function normaliseWeights(rows) {
   const byDay = new Map();
   for (const row of rows || []) {
     const kg = Number(row?.kg ?? row?.weight_kg);
-    const t = toTime(row?.at ?? row?.measured_at ?? row?.date);
-    if (!Number.isFinite(kg) || kg <= 0 || kg > 500 || !Number.isFinite(t)) continue;
+    if (!Number.isFinite(kg) || kg <= 0 || kg > 500) continue;
 
-    // Keyed by calendar day so two weigh-ins on one morning do not double the
-    // weight of that day in the regression.
-    const key = new Date(t).toISOString().slice(0, 10);
+    const stamp = toTime(row?.at ?? row?.measured_at ?? row?.date);
+
+    // The day the weight is *about*, not the moment it was typed in. Filling
+    // in last Tuesday from today's phone sends a timestamp of now, so keying
+    // on the timestamp filed that reading under today: two back-filled days
+    // collapsed into one row, and the span the trend is fitted over shrank to
+    // the length of the data-entry session rather than the period weighed.
+    // The timestamp is still the fallback for rows that carry no day.
+    const key = typeof row?.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.day)
+      ? row.day
+      : (Number.isFinite(stamp) ? new Date(stamp).toISOString().slice(0, 10) : null);
+    if (!key) continue;
+
+    // Positioned at midday of its own date, so the regression's x-axis is the
+    // calendar rather than the hour someone happened to stand on the scale.
+    const t = Date.parse(`${key}T12:00:00.000Z`);
+    // Two weigh-ins on one morning are one day's evidence; the later reading
+    // wins, ordered by when they were actually taken.
+    const order = Number.isFinite(stamp) ? stamp : t;
     const existing = byDay.get(key);
-    if (!existing || t > existing.t) byDay.set(key, { t, kg, day: key });
+    if (!existing || order >= existing.order) byDay.set(key, { t, kg, day: key, order });
   }
-  return [...byDay.values()].sort((a, b) => a.t - b.t);
+  return [...byDay.values()]
+    .sort((a, b) => a.t - b.t)
+    .map(({ order, ...row }) => row);
 }
 
 /**
@@ -126,6 +143,30 @@ export function weightTrend(weights, { minReadings = 3, minSpanDays = 7 } = {}) 
     firstKg: rows[0].kg,
     lastKg: rows[rows.length - 1].kg,
     df
+  };
+}
+
+/**
+ * What is still missing before a trend can be fitted.
+ *
+ * The gate has two halves -- enough readings, and enough time between the
+ * first and the last -- and they run out at different moments. Four readings
+ * taken over five days satisfies one and not the other, and being told "trend
+ * needs 3 days" at that point is worse than being told nothing: it names a
+ * requirement that is already met, so the obvious response is to weigh again
+ * tomorrow, which does not help.
+ *
+ * Both halves are returned rather than the first failing one, so the caller
+ * can say which is short and by how much.
+ */
+export function trendGap(weights, { minReadings = 3, minSpanDays = 7 } = {}) {
+  const rows = normaliseWeights(weights);
+  if (!rows.length) return { readings: minReadings, days: minSpanDays };
+
+  const spanDays = (rows[rows.length - 1].t - rows[0].t) / DAY_MS;
+  return {
+    readings: Math.max(0, minReadings - rows.length),
+    days: Math.max(0, Math.ceil(minSpanDays - spanDays))
   };
 }
 

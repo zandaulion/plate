@@ -723,6 +723,24 @@ function showDerivedAge() {
 
 $('p-birth-year')?.addEventListener('input', showDerivedAge);
 
+/**
+ * What to say while there is no trend yet.
+ *
+ * A trend needs three readings *and* a week between the first and the last,
+ * and which half is missing changes what the reader should do. This used to
+ * say "trend needs 3 days" whatever the reason, which was wrong in both
+ * directions: it named the wrong number, and it told someone with four
+ * readings over five days to do the thing they had already done.
+ */
+function trendWanted(gap) {
+  if (!gap) return 'trend on the way';
+  const { readings = 0, days = 0 } = gap;
+  if (readings > 0 && days > 0) return 'trend needs 3 weigh-ins over a week';
+  if (readings > 0) return `trend needs ${readings} more weigh-in${readings > 1 ? 's' : ''}`;
+  if (days > 0) return `trend needs ${days} more day${days > 1 ? 's' : ''}`;
+  return 'trend on the way';
+}
+
 function updatePlatoCompanion(summary, split = null, entries = []) {
   const wrap = $('plato-svg-wrap');
   const speech = $('plato-speech');
@@ -1504,7 +1522,7 @@ function renderWeigh(day, weight, expenditure) {
       const dir = t.slopeKgPerWeek < 0 ? 'down' : 'up';
       sub = `${dir} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg/wk`;
     } else {
-      sub = 'trend needs 3 days';
+      sub = trendWanted(weight.gap);
     }
     el.innerHTML = `
       <button class="weigh-row weigh-pill" type="button" id="weigh-open">

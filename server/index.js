@@ -21,7 +21,7 @@ import {
 } from './foods.js';
 import { summariseRecent } from '../core/foods.js';
 import { toJson, toCsv } from '../core/export.js';
-import { smoothSeries, weightTrend } from '../core/weight.js';
+import { smoothSeries, weightTrend, trendGap } from '../core/weight.js';
 import { adaptiveExpenditure } from '../core/expenditure.js';
 import { summariseUsage } from '../core/usage.js';
 import { cleanBatch, summariseEvents } from '../core/events.js';
@@ -552,7 +552,10 @@ app.get('/api/entries', requireDevice, (req, res) => {
     weight: {
       today: todays ? todays.kg : null,
       last: nearest ? nearest.kg : null,
-      trend: weightTrend(weights)
+      trend: weightTrend(weights),
+      // Sent alongside, so the prompt can name what is short instead of
+      // guessing at one of the two requirements.
+      gap: trendGap(weights)
     }
   });
 });
