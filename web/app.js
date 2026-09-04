@@ -739,13 +739,21 @@ function updatePlatoCompanion(summary, split = null, entries = []) {
     return;
   }
 
+  // A recommendation belongs to the day it was computed from. Clearing the
+  // state without clearing the bubble left the previous day's line standing:
+  // step back to yesterday, step forward to a morning with one meal in it, and
+  // Platosaurus was still reporting yesterday's fats. The text is only left
+  // alone when it is one of the idle quotes, which cycle on their own timer and
+  // would restart on every render otherwise.
+  const stale = state.activePlatoRecommendation?.text || null;
   state.activePlatoRecommendation = null;
   if (actionsEl) {
     actionsEl.hidden = true;
     actionsEl.innerHTML = '';
   }
 
-  if (!speech.textContent || speech.textContent === 'Rawr! What are we eating today?') {
+  if (!speech.textContent || speech.textContent === stale
+      || speech.textContent === 'Rawr! What are we eating today?') {
     speech.textContent = getNextPlatoQuote();
   }
 
