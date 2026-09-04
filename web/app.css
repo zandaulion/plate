@@ -1617,12 +1617,28 @@ input[type="range"]::-moz-range-thumb {
   .ate-row button:active { transform: none; }
 }
 
-/* A part-eaten item says so on its own row, because a single figure at the
-   top cannot show that the chicken went and the rice stayed. */
+/* Each item carries its own fraction, because a single figure at the top
+   cannot say that the chicken went and the rice stayed. Quiet until it is not
+   "all": an untouched plate should not look like four unanswered questions. */
 .item-ate {
-  display: block;
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
   color: var(--ink-3);
-  font-size: .74rem;
+  font: inherit;
+  font-size: .72rem;
+  line-height: 1.5;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.item.is-part .item-ate {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .item.is-part .item-kcal { opacity: .85; }

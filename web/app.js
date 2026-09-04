@@ -1971,8 +1971,11 @@ function renderReview() {
 
   $('review-items').innerHTML = est.items.map((it) => `
     <li class="item${ateFraction(it) < 1 ? ' is-part' : ''}" data-id="${esc(it.id)}">
-      <span class="item-name">${esc(it.name)}${
-        ateFraction(it) < 1 ? `<small class="item-ate">${esc(ateWords(ateFraction(it)))}</small>` : ''}</span>
+      <span class="item-name">${esc(it.name)}
+        <button type="button" class="item-ate" data-ate-item
+                aria-label="Ate ${esc(ateWords(ateFraction(it)))} of the ${esc(it.name)}. Tap for less.">
+          ${esc(ateShort(ateFraction(it)))}
+        </button></span>
       <span class="item-kcal">${Math.round(itemMacros(it).calories)} kcal</span>
       <span class="grams">
         <button type="button" data-step="-10" aria-label="Less ${esc(it.name)}">&minus;</button>
@@ -2027,10 +2030,37 @@ function renderAte(est) {
 
 const ATE_WORDS = new Map([[0, 'none of it'], [0.25, 'a quarter'], [0.5, 'half'],
                            [0.75, 'three quarters'], [1, 'all of it']]);
+const ATE_SHORT = new Map([[0, 'none'], [0.25, '\u00bc'], [0.5, '\u00bd'],
+                           [0.75, '\u00be'], [1, 'all']]);
 
 function ateWords(f) {
   if (ATE_WORDS.has(f)) return ATE_WORDS.get(f);
   return `${Math.round(f * 100)}%`;
+}
+
+function ateShort(f) {
+  if (ATE_SHORT.has(f)) return ATE_SHORT.get(f);
+  return `${Math.round(f * 100)}%`;
+}
+
+/**
+ * The next fraction down, wrapping back to the whole.
+ *
+ * A cycle rather than a menu: the row is already carrying a name, a calorie
+ * figure, two steppers and a delete, and a fifth control that opens something
+ * would be the heaviest thing on it for the least-used decision. Four values
+ * means at worst three taps to reach any of them, and overshooting costs one
+ * more rather than an undo.
+ *
+ * A fraction that came from a photograph -- which can be any number -- drops
+ * to the nearest step below on the first tap, so the cycle is entered rather
+ * than jumped out of.
+ */
+const ATE_STEPS = [1, 0.75, 0.5, 0.25];
+
+function nextAte(current) {
+  const below = ATE_STEPS.find((v) => v < current - 1e-9);
+  return below === undefined ? 1 : below;
 }
 
 $('ate-row')?.addEventListener('click', (ev) => {
@@ -2178,6 +2208,15 @@ $('review-items').addEventListener('click', (ev) => {
   const li = ev.target.closest('.item');
   if (!li || !state.estimate) return;
   const id = li.dataset.id;
+
+  if (ev.target.closest('[data-ate-item]')) {
+    const item = state.estimate.items.find((i) => i.id === id);
+    if (!item) return;
+    track('ate_item_cycled');
+    state.estimate = markEaten(state.estimate, { [id]: nextAte(ateFraction(item)) });
+    renderReview();
+    return;
+  }
 
   if (ev.target.closest('[data-remove]')) {
     state.estimate = removeItem(state.estimate, id);
