@@ -1783,6 +1783,10 @@ function openReview(mode, entry = null) {
       }
     : null;
   state.meal = entry?.meal || guessMeal();
+  // What the entry looked like on the way in, so closing can tell an
+  // abandoned edit from a glance. Only meaningful when editing: a new capture
+  // has nothing saved behind it, and closing that is the discard path.
+  state.openedAs = entry ? snapshotEstimate() : null;
 
   $('review-heading').textContent = SHEET_TITLES[mode];
   $('save-entry').textContent = mode === 'edit' ? 'Save changes' : 'Save';
@@ -1858,6 +1862,7 @@ function teardownReview() {
   state.photo = null;
   state.editingId = null;
   state.existingPhotoId = null;
+  state.openedAs = null;
   state.corrections = 0;
   // A request may still be in flight -- the reply checks whether the sheet is
   // still open and returns without clearing anything, so the overlay has to
@@ -1870,7 +1875,38 @@ function teardownReview() {
   }
 }
 
+/**
+ * The state of the sheet, for telling a change from a glance.
+ *
+ * The meal is in here too: moving an entry from lunch to dinner and closing is
+ * the same lost work as changing a weight and closing.
+ */
+function snapshotEstimate() {
+  if (!state.estimate) return null;
+  return JSON.stringify({
+    meal: state.meal,
+    items: state.estimate.items.map((i) => ({
+      id: i.id, name: i.name, grams: i.grams, ate: ateFraction(i)
+    })),
+    portionSource: portionSourceOf(state.estimate)
+  });
+}
+
+function hasUnsavedEdit() {
+  return Boolean(state.editingId && state.openedAs && snapshotEstimate() !== state.openedAs);
+}
+
 function closeReview() {
+  // Closing an entry that is already saved throws the edit away, and it used
+  // to do so silently -- change how much of something you ate, tap the cross,
+  // and the number went back with nothing to say it had. Reported by someone
+  // who set an item to three quarters and closed the sheet.
+  //
+  // Asked only when something actually changed, so opening an entry to look at
+  // it and closing again is still one tap.
+  if (hasUnsavedEdit() && !confirm('Discard your changes to this entry?')) return;
+  state.openedAs = null;
+
   document.activeElement?.blur?.();
   const sheet = $('review');
   if (sheet && !sheet.hidden && !sheet.classList.contains('closing')) {
@@ -2808,6 +2844,9 @@ $('save-entry').addEventListener('click', async () => {
     // screen goes through history.go(), which is asynchronous, and the overlay
     // would otherwise linger over the toast for a frame or two.
     idle();
+    // The edit is on the server now, so there is nothing left to discard and
+    // the close must not ask about it.
+    state.openedAs = null;
     closeReview();
     toast(state.mode === 'edit' ? 'Updated' : 'Logged');
     await loadDay();
