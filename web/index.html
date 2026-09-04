@@ -222,6 +222,29 @@
           <p class="hint" id="weight-hint"></p>
         </section>
 
+        <!-- Below the weight, because it answers a different question: the
+             weight is what was served, this is how much of it went. Kept
+             separate for that reason -- reducing the served weight instead
+             would destroy the measurement in order to record a decision about
+             it, and there would be nothing to change your mind against. -->
+        <section class="ate-block" id="ate-block" hidden>
+          <div class="ate-head">
+            <span id="ate-label">How much did you eat?</span>
+            <output id="ate-out" for="ate-row">all of it</output>
+          </div>
+          <div class="ate-row" id="ate-row" role="group" aria-labelledby="ate-label">
+            <button type="button" data-ate="0.25">&frac14;</button>
+            <button type="button" data-ate="0.5">&frac12;</button>
+            <button type="button" data-ate="0.75">&frac34;</button>
+            <button type="button" data-ate="1" class="is-on">all</button>
+          </div>
+          <button id="leftovers-shoot" class="link-btn" type="button">
+            Ate some things and not others? Photograph what's left
+          </button>
+          <p class="hint" id="ate-hint"></p>
+        </section>
+        <input id="file-leftovers" type="file" accept="image/*" capture="environment" hidden>
+
         <!-- Sits directly under the weight control, not below the item list:
              the number has to be visible while the slider is being dragged,
              or the correction is being made blind. -->

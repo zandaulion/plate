@@ -14,7 +14,7 @@ import {
   listDevices, revokeDevice, listAllDevices, setDeviceRevoked, setDeviceLabel,
   ThrottledError
 } from './auth.js';
-import { analysePhoto, AnalysisError, isConfigured, getModel } from './gemini.js';
+import { analysePhoto, readLeftovers, AnalysisError, isConfigured, getModel } from './gemini.js';
 import {
   lookupBarcode, searchFoods, LookupError, usdaConfigured,
   productImagePath, hasProductImage
@@ -27,9 +27,10 @@ import { summariseUsage } from '../core/usage.js';
 import { cleanBatch, summariseEvents } from '../core/events.js';
 import { zip } from './zip.js';
 import {
-  fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf, hasPhotoItems
+  fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf, hasPhotoItems,
+  markEaten
 } from '../core/analysis/estimate.js';
-import { parseResponse } from '../core/analysis/prompt.js';
+import { parseResponse, parseLeftovers } from '../core/analysis/prompt.js';
 import {
   charge, refund, BudgetError, MAX_CORRECTIONS,
   cachedAnalysis, cacheAnalysis, forgetPhoto
@@ -659,6 +660,88 @@ app.post('/api/entries/:id/duplicate', requireDevice, (req, res) => {
 
   res.status(201).json({ id, day, totals, photoId });
 });
+
+/**
+ * Read what was left on the plate.
+ *
+ * Sends the entry's original photograph together with one of the leftovers and
+ * gets back, per item, the share that was eaten. Nothing is written: the
+ * fractions go to the client for confirmation and are saved by the ordinary
+ * edit path, so a reading that looks wrong can simply be abandoned -- the same
+ * shape as reanalyse, and for the same reason.
+ *
+ * The original photo never leaves the server. It is on disk already, so the
+ * client uploads only the second picture.
+ */
+app.post('/api/entries/:id/leftovers', requireDevice, asyncRoute(async (req, res) => {
+  const row = db.prepare('SELECT * FROM entries WHERE id = ? AND account_id = ?')
+    .get(req.params.id, req.device.account_id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+
+  const image = typeof req.body?.image === 'string' ? req.body.image : null;
+  if (!image) {
+    return res.status(400).json({ error: 'no_image', message: 'A photo of what is left is needed.' });
+  }
+  if (!row.photo_id) {
+    return res.status(400).json({
+      error: 'no_photo',
+      message: 'This entry has no photo to compare against. Set how much you ate by hand instead.'
+    });
+  }
+
+  const file = path.join(PHOTO_DIR, path.basename(row.photo_id));
+  if (!fs.existsSync(file)) {
+    return res.status(410).json({
+      error: 'photo_gone',
+      message: 'The original photograph is no longer stored, so there is nothing to compare against.'
+    });
+  }
+
+  const items = JSON.parse(row.items_json);
+  charge(req.device.account_id);
+  let raw, usage, model;
+  try {
+    ({ raw, usage, model } = await readLeftovers(
+      fs.readFileSync(file).toString('base64'),
+      image,
+      row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
+      items
+    ));
+  } catch (err) {
+    // Nothing was spent if the request never reached the model.
+    if (err.status === 503 || err.status === 429) refund(req.device.account_id);
+    throw err;
+  }
+
+  // charge() has already booked this against the daily limit; token counts go
+  // back to the client the way every other model call in this app reports them.
+  const read = parseLeftovers(raw, items);
+  if (!read.ok) {
+    // A refusal is not a failure to answer: "that is a different meal" is the
+    // model doing its job, and overwriting an entry on the strength of a
+    // photograph of something else would be the actual harm.
+    return res.status(422).json({
+      error: read.reason,
+      message: read.reason === 'different_meal'
+        ? `That does not look like the same meal. ${read.note}`.trim()
+        : 'The leftovers could not be read. Set how much you ate by hand instead.',
+      note: read.note
+    });
+  }
+
+  const updated = markEaten(
+    { items, portionSource: row.portion_source, portionConfirmed: row.portion_confirmed },
+    read.eaten
+  );
+  res.json({
+    eaten: read.eaten,
+    note: read.note,
+    items: updated.items,
+    totals: totalsOf(updated),
+    ranges: rangesOf(updated),
+    usage, model
+  });
+}));
 
 /**
  * Read a saved entry's photograph again, with a correction from the person

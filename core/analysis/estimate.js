@@ -50,6 +50,24 @@ export const ERROR_BANDS = {
   weighed:   { calories: 0.16, protein: 0.15, carbs: 0.16, fat: 0.33, fiber: 0.16 }
 };
 
+/**
+ * How wrong a fraction-of-the-plate judgement is, relatively.
+ *
+ * Not measured, unlike everything else in this file, and deliberately set on
+ * the pessimistic side until it is. Judging how much of a plate remains is a
+ * comparison rather than an absolute reading -- the thing is in front of you,
+ * or it was twenty minutes ago -- and comparisons are the kind of judgement
+ * people make well, so this is likely generous. It is not claimed as better
+ * than that.
+ *
+ * The same figure is used whether the fraction was tapped in or read from a
+ * photograph of the leftovers. The photograph's advantage is resolution, not
+ * precision: it can tell that the chicken went and the rice stayed, which no
+ * single fraction can express. Claiming it is also more accurate would need a
+ * measurement run of its own.
+ */
+export const EATEN_BAND = 0.15;
+
 /** How the weight in this estimate was arrived at. */
 export const PORTION_SOURCES = ['model', 'estimated', 'weighed'];
 
@@ -119,10 +137,30 @@ function safeRate(value, grams) {
   return v / grams;
 }
 
-/** Macros for one item at its current weight. */
+/**
+ * How much of an item was actually eaten, as a fraction of what was served.
+ *
+ * Absent means all of it, which is what every entry saved before this said.
+ */
+export function ateFraction(item) {
+  const v = Number(item?.ate);
+  if (!Number.isFinite(v)) return 1;
+  return Math.min(1, Math.max(0, v));
+}
+
+/**
+ * Macros for one item, at the weight served and the share of it eaten.
+ *
+ * The served weight is kept rather than reduced. What the model read off the
+ * photograph is what was on the plate, and overwriting it with a smaller
+ * number would destroy the measurement in order to record a decision about
+ * it -- the same rule the rest of the app follows. Change your mind about how
+ * much you left and the original is still there to apply it to.
+ */
 export function itemMacros(item) {
+  const eaten = (item?.grams || 0) * ateFraction(item);
   const out = {};
-  for (const n of NUTRIENTS) out[n] = (item.per?.[n] || 0) * (item.grams || 0);
+  for (const n of NUTRIENTS) out[n] = (item?.per?.[n] || 0) * eaten;
   return out;
 }
 
@@ -131,7 +169,7 @@ export function totalsOf(estimate) {
   for (const item of estimate?.items || []) {
     const m = itemMacros(item);
     for (const n of NUTRIENTS) t[n] += m[n] || 0;
-    t.grams += item.grams || 0;
+    t.grams += (item.grams || 0) * ateFraction(item);
   }
   for (const k of Object.keys(t)) t[k] = round(t[k], k === 'calories' || k === 'grams' ? 0 : 1);
   return t;
@@ -151,7 +189,20 @@ export function totalsOf(estimate) {
  */
 export function rangesOf(estimate) {
   const items = estimate?.items || [];
-  const band = ERROR_BANDS[portionSourceOf(estimate)] || ERROR_BANDS.model;
+  const base = ERROR_BANDS[portionSourceOf(estimate)] || ERROR_BANDS.model;
+
+  // Saying how much was left is a second estimate stacked on the first, so the
+  // uncertainty grows. Combined in quadrature, since the two are independent:
+  // misjudging the plate does not make you misjudge the half of it you left.
+  //
+  // Widening rather than leaving it alone matters because the alternative
+  // failure is silent -- an entry someone has just interacted with looks more
+  // trustworthy, and reporting an unchanged band after two estimates would
+  // claim exactly the accuracy the three-level ERROR_BANDS exist to deny.
+  const band = hasLeftovers(estimate)
+    ? Object.fromEntries(Object.entries(base)
+        .map(([k, v]) => [k, Math.sqrt(v * v + EATEN_BAND * EATEN_BAND)]))
+    : base;
 
   const photo = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
   const exact = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
@@ -191,6 +242,35 @@ export function hasPhotoItems(estimate) {
  */
 function withUserPortion(estimate) {
   return portionSourceOf(estimate) === 'weighed' ? 'weighed' : 'estimated';
+}
+
+/**
+ * Record that some of the meal was left behind.
+ *
+ * `share` is either one number for the whole plate, or a map of item id to
+ * number. The per-item form exists because a single fraction is structurally
+ * wrong on a mixed plate: eating the chicken and leaving the rice is not
+ * "three quarters of dinner", and scaling both by the same factor misreports
+ * the protein and the carbohydrate in opposite directions.
+ */
+export function markEaten(estimate, share) {
+  const forItem = (item) => {
+    if (typeof share === 'number') return share;
+    const v = share?.[item.id];
+    return Number.isFinite(Number(v)) ? Number(v) : ateFraction(item);
+  };
+  return {
+    ...estimate,
+    items: (estimate?.items || []).map((item) => ({
+      ...item,
+      ate: Math.min(1, Math.max(0, Number(forItem(item)) || 0))
+    }))
+  };
+}
+
+/** True when any of this was left uneaten. */
+export function hasLeftovers(estimate) {
+  return (estimate?.items || []).some((i) => ateFraction(i) < 1);
 }
 
 /** Declare how the weight was arrived at. */

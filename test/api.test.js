@@ -1782,3 +1782,82 @@ test('a birth year nobody could have is refused, not clamped', async () => {
       || (body.fields || []).includes('birthYear'), 'and names the field');
   }
 });
+
+// ------------------------------------------------------------- leftovers
+
+test('an entry remembers how much of it was eaten', async () => {
+  const { auth } = await registerDevice();
+  const items = [
+    { id: 'a', name: 'chicken', grams: 200, source: 'photo',
+      per: { calories: 1.65, protein: 0.31, fat: 0.036, carbs: 0, fiber: 0 } },
+    { id: 'b', name: 'rice', grams: 300, source: 'photo',
+      per: { calories: 1.3, protein: 0.027, fat: 0.003, carbs: 0.28, fiber: 0.004 } }
+  ];
+
+  const made = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ day: '2026-09-04', meal: 'dinner', items })
+  })).json();
+  assert.equal(made.totals.calories, 720);
+
+  // Ate the chicken, left the rice.
+  const edited = await api(`/api/entries/${made.id}`, {
+    method: 'PUT', headers: auth,
+    body: JSON.stringify({
+      items: [{ ...items[0], ate: 1 }, { ...items[1], ate: 0 }],
+      portionSource: 'model'
+    })
+  });
+  assert.equal(edited.status, 200);
+
+  const day = await (await api('/api/entries?day=2026-09-04', { headers: auth })).json();
+  const back = day.entries[0];
+  assert.equal(back.totals.calories, 330, 'the day counts only what was eaten');
+  assert.deepEqual(back.items.map((i) => i.ate), [1, 0]);
+  assert.deepEqual(back.items.map((i) => i.grams), [200, 300],
+    'and still knows what was served');
+});
+
+test('leftovers cannot be read for an entry with no photo to compare against', async () => {
+  const { auth } = await registerDevice();
+  const made = await (await api('/api/entries', {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({
+      day: '2026-09-04', meal: 'lunch',
+      items: [{ id: 'a', name: 'soup', grams: 300, source: 'manual',
+                per: { calories: 0.4, protein: 0.02, fat: 0.01, carbs: 0.05, fiber: 0.01 } }]
+    })
+  })).json();
+
+  const res = await api(`/api/entries/${made.id}/leftovers`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ image: Buffer.alloc(400, 0x89).toString('base64') })
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).error, 'no_photo');
+});
+
+test('reading leftovers needs an image, and an entry that is yours', async () => {
+  const a = await registerDevice('a');
+  const b = await registerDevice('b');
+  const made = await (await api('/api/entries', {
+    method: 'POST', headers: a.auth,
+    body: JSON.stringify({
+      day: '2026-09-04', meal: 'lunch',
+      items: [{ id: 'a', name: 'soup', grams: 300, source: 'photo',
+                per: { calories: 0.4, protein: 0.02, fat: 0.01, carbs: 0.05, fiber: 0.01 } }]
+    })
+  })).json();
+
+  const noImage = await api(`/api/entries/${made.id}/leftovers`, {
+    method: 'POST', headers: a.auth, body: '{}'
+  });
+  assert.equal(noImage.status, 400);
+  assert.equal((await noImage.json()).error, 'no_image');
+
+  const notYours = await api(`/api/entries/${made.id}/leftovers`, {
+    method: 'POST', headers: b.auth,
+    body: JSON.stringify({ image: Buffer.alloc(400, 0x89).toString('base64') })
+  });
+  assert.equal(notYours.status, 404, 'another account cannot photograph your dinner');
+});

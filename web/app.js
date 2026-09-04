@@ -6,7 +6,7 @@
 
 import {
   totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
-  addManualItem, hasPhotoItems, markWeighed, portionSourceOf
+  addManualItem, hasPhotoItems, markWeighed, portionSourceOf, markEaten, ateFraction
 } from '/core/analysis/estimate.js';
 import { toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
 import { macroAgreement, ageFromBirthYear } from '/core/nutrition.js';
@@ -1967,9 +1967,12 @@ function renderReview() {
     $('review-note').hidden = false;
   }
 
+  renderAte(est);
+
   $('review-items').innerHTML = est.items.map((it) => `
-    <li class="item" data-id="${esc(it.id)}">
-      <span class="item-name">${esc(it.name)}</span>
+    <li class="item${ateFraction(it) < 1 ? ' is-part' : ''}" data-id="${esc(it.id)}">
+      <span class="item-name">${esc(it.name)}${
+        ateFraction(it) < 1 ? `<small class="item-ate">${esc(ateWords(ateFraction(it)))}</small>` : ''}</span>
       <span class="item-kcal">${Math.round(itemMacros(it).calories)} kcal</span>
       <span class="grams">
         <button type="button" data-step="-10" aria-label="Less ${esc(it.name)}">&minus;</button>
@@ -1985,6 +1988,93 @@ function renderReview() {
   $('save-entry').disabled = est.items.length === 0;
   if ($('dup-entry')) $('dup-entry').disabled = est.items.length === 0;
 }
+
+/**
+ * The "how much did you eat" control.
+ *
+ * Hidden until there is something to apply it to. It reads the estimate rather
+ * than keeping its own state, so reopening a saved entry shows what was
+ * recorded instead of resetting to "all of it".
+ */
+function renderAte(est) {
+  const block = $('ate-block');
+  if (!block) return;
+  const items = est.items || [];
+  block.hidden = items.length === 0;
+  if (!items.length) return;
+
+  const fractions = items.map(ateFraction);
+  const uniform = fractions.every((f) => f === fractions[0]) ? fractions[0] : null;
+
+  for (const btn of $('ate-row').querySelectorAll('button')) {
+    btn.classList.toggle('is-on', uniform !== null && Number(btn.dataset.ate) === uniform);
+  }
+
+  $('ate-out').textContent = uniform === null
+    ? 'different for each'
+    : ateWords(uniform);
+
+  // Only offered where there is an original photograph to compare against.
+  // Without one there is nothing for the second picture to be measured relative
+  // to, and the answer would be a fresh guess dressed up as a comparison.
+  const canShoot = Boolean(state.editingId && state.existingPhotoId);
+  $('leftovers-shoot').hidden = !canShoot;
+
+  $('ate-hint').textContent = uniform === 1
+    ? ''
+    : 'Counted as this much of the plate. What was served stays as it was, so you can change this later.';
+}
+
+const ATE_WORDS = new Map([[0, 'none of it'], [0.25, 'a quarter'], [0.5, 'half'],
+                           [0.75, 'three quarters'], [1, 'all of it']]);
+
+function ateWords(f) {
+  if (ATE_WORDS.has(f)) return ATE_WORDS.get(f);
+  return `${Math.round(f * 100)}%`;
+}
+
+$('ate-row')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-ate]');
+  if (!btn || !state.estimate) return;
+  state.estimate = markEaten(state.estimate, Number(btn.dataset.ate));
+  renderReview();
+});
+
+/**
+ * Read the leftovers from a photograph of them.
+ *
+ * Nothing is saved by this: the fractions come back, are applied to the
+ * estimate in front of you, and are written only when you save -- so a reading
+ * that looks wrong is abandoned by closing the sheet, exactly like a re-read
+ * of the original photo.
+ */
+$('leftovers-shoot')?.addEventListener('click', () => $('file-leftovers').click());
+
+$('file-leftovers')?.addEventListener('change', async (ev) => {
+  const file = ev.target.files?.[0];
+  ev.target.value = '';
+  if (!file || !state.editingId) return;
+
+  const btn = $('leftovers-shoot');
+  const was = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Reading what is left…';
+  try {
+    const { base64 } = await prepareImage(file);
+    const out = await api(`/api/entries/${state.editingId}/leftovers`, {
+      method: 'POST',
+      body: JSON.stringify({ image: base64 })
+    });
+    state.estimate = markEaten(state.estimate, out.eaten);
+    renderReview();
+    toast(out.note ? out.note.slice(0, 90) : 'Read what was left');
+  } catch (err) {
+    toast(err.message || 'Could not read the leftovers');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = was;
+  }
+});
 
 function renderGrazingCatchup() {
   const panel = $('grazing-panel');

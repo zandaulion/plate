@@ -3,7 +3,7 @@
 // The prompt and response schema live in core/analysis/prompt.js so the
 // Android app can send exactly the same request; only transport belongs here.
 
-import { buildPrompt, RESPONSE_SCHEMA } from '../core/analysis/prompt.js';
+import { buildPrompt, RESPONSE_SCHEMA, buildLeftoversPrompt, LEFTOVERS_SCHEMA } from '../core/analysis/prompt.js';
 
 const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
@@ -28,21 +28,49 @@ export class AnalysisError extends Error {
  * observable in production rather than assumed from a one-off probe.
  */
 export async function analysePhoto(imageBase64, mimeType = 'image/jpeg', correction = null) {
+  return call(
+    [
+      { inline_data: { mime_type: mimeType, data: imageBase64 } },
+      { text: buildPrompt(correction) }
+    ],
+    RESPONSE_SCHEMA
+  );
+}
+
+/**
+ * The same plate before and after, read for what was left.
+ *
+ * Both photographs go in one request rather than two, because the question is
+ * a comparison: asking about the second alone would be asking the model to
+ * re-estimate a portion it can no longer see whole.
+ *
+ * The order matters and is stated in the prompt -- before, then after -- since
+ * nothing in the images themselves says which way round time ran.
+ */
+export async function readLeftovers(beforeBase64, afterBase64, mimeType, items) {
+  return call(
+    [
+      { text: 'Before eating:' },
+      { inline_data: { mime_type: mimeType, data: beforeBase64 } },
+      { text: 'After eating:' },
+      { inline_data: { mime_type: 'image/jpeg', data: afterBase64 } },
+      { text: buildLeftoversPrompt(items) }
+    ],
+    LEFTOVERS_SCHEMA
+  );
+}
+
+async function call(parts, schema) {
   const key = getKey();
   if (!key) {
     throw new AnalysisError('not_configured', 'Photo analysis is not configured on this server.', 503);
   }
 
   const body = {
-    contents: [{
-      parts: [
-        { inline_data: { mime_type: mimeType, data: imageBase64 } },
-        { text: buildPrompt(correction) }
-      ]
-    }],
+    contents: [{ parts }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseSchema: RESPONSE_SCHEMA,
+      responseSchema: schema,
       temperature: 0.2,
       maxOutputTokens: 4096
     }

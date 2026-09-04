@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   fromModelResponse, totalsOf, rangesOf, setItemGrams, setTotalGrams,
   removeItem, addManualItem, itemMacros, ERROR_BANDS, hasPhotoItems,
-  markWeighed, portionSourceOf
+  markWeighed, portionSourceOf, markEaten, ateFraction, hasLeftovers
 } from './estimate.js';
 
 const RESPONSE = {
@@ -216,4 +216,78 @@ test('a scanned item keeps its barcode', () => {
     name: 'Soup', grams: 300, per100: { calories: 40, protein: 2, fat: 1, carbs: 5 }
   });
   assert.ok(!('barcode' in typed.items[0]), 'and one without a code carries none');
+});
+
+// ------------------------------------------------------------- leftovers
+
+const plate = () => ({
+  portionSource: 'model',
+  items: [
+    { id: 'a', name: 'chicken', grams: 200, source: 'photo',
+      per: { calories: 1.65, protein: 0.31, fat: 0.036, carbs: 0, fiber: 0 } },
+    { id: 'b', name: 'rice', grams: 300, source: 'photo',
+      per: { calories: 1.3, protein: 0.027, fat: 0.003, carbs: 0.28, fiber: 0.004 } }
+  ]
+});
+
+test('leaving some of a meal scales what it contributes', () => {
+  const whole = totalsOf(plate());
+  const half = totalsOf(markEaten(plate(), 0.5));
+
+  assert.equal(half.calories, Math.round(whole.calories / 2));
+  assert.equal(half.grams, whole.grams / 2);
+  // Both figures are rounded to one decimal on their own, so halving the
+  // rounded whole and rounding the halved parts can differ by half a unit --
+  // and binary floating point puts that difference a hair above 0.05.
+  assert.ok(Math.abs(half.protein - whole.protein / 2) < 0.06);
+});
+
+test('the served weight survives, so the decision can be taken back', () => {
+  const left = markEaten(plate(), 0.25);
+  assert.deepEqual(left.items.map((i) => i.grams), [200, 300],
+    'what was on the plate is a measurement, not a decision about it');
+
+  // And changing your mind applies to the original, not to the reduced figure.
+  const rethought = markEaten(left, 1);
+  assert.deepEqual(totalsOf(rethought), totalsOf(plate()));
+});
+
+test('a mixed plate can be eaten unevenly, which one fraction cannot express', () => {
+  // Ate the chicken, left the rice.
+  const uneven = markEaten(plate(), { a: 1, b: 0 });
+  const t = totalsOf(uneven);
+  assert.equal(t.calories, 330);
+  assert.ok(t.protein > 60, 'the protein all came from the part that was eaten');
+  assert.equal(Math.round(t.carbs), 0, 'and none of the carbohydrate did');
+
+  // The uniform fraction with the same total weight eaten gets both wrong.
+  const uniform = totalsOf(markEaten(plate(), 200 / 500));
+  assert.ok(uniform.protein < t.protein / 2);
+  assert.ok(uniform.carbs > 30);
+});
+
+test('leaving some widens the band rather than tightening it', () => {
+  const whole = rangesOf(plate());
+  const part = rangesOf(markEaten(plate(), 0.5));
+
+  const spread = (r) => (r.high - r.low) / r.value;
+  assert.ok(spread(part.calories) > spread(whole.calories),
+    'two estimates stacked are less certain than one, never more');
+
+  // Quadrature, not addition: 30% and 15% make about 33.5%, not 45%.
+  assert.ok(Math.abs(spread(part.calories) / 2 - Math.sqrt(0.30 ** 2 + 0.15 ** 2)) < 0.005);
+});
+
+test('a fraction outside nought and one is brought back into range', () => {
+  assert.equal(markEaten(plate(), 2).items[0].ate, 1);
+  assert.equal(markEaten(plate(), -1).items[0].ate, 0);
+  assert.equal(ateFraction({ grams: 100 }), 1, 'entries saved before this ate everything');
+  assert.equal(ateFraction({ ate: 'half' }), 1, 'and nonsense is not a leftover');
+});
+
+test('an untouched plate is not treated as a leftover', () => {
+  assert.equal(hasLeftovers(plate()), false);
+  assert.equal(hasLeftovers(markEaten(plate(), 1)), false);
+  assert.equal(hasLeftovers(markEaten(plate(), 0.99)), true);
+  assert.deepEqual(rangesOf(markEaten(plate(), 1)), rangesOf(plate()));
 });
