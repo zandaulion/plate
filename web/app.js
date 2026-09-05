@@ -2037,7 +2037,12 @@ function offerPhotoDay(takenOn) {
     <button type="button" class="link-btn" id="photo-day-move">Log it there instead</button>`;
   note.hidden = false;
   $('photo-day-move').addEventListener('click', () => {
-    state.day = photoDay;
+    // On the entry, not on the app. Setting state.day moved the whole day
+    // view: the first photo went where it was asked to, and every photo after
+    // it followed silently -- the offer only appears when the picture and the
+    // viewed day disagree, and they no longer did. Four breakfasts landed a
+    // week back and the screen showed an empty today.
+    state.photoDay = photoDay;
     note.hidden = true;
     toast(`This entry will be logged to ${label}`);
   });
@@ -2123,6 +2128,7 @@ function openReview(mode, entry = null) {
   // abandoned edit from a glance. Only meaningful when editing: a new capture
   // has nothing saved behind it, and closing that is the discard path.
   state.openedAs = entry ? snapshotEstimate() : null;
+  state.photoDay = null;
 
   $('review-heading').textContent = SHEET_TITLES[mode];
   $('save-entry').textContent = mode === 'edit' ? 'Save changes' : 'Save';
@@ -2199,6 +2205,7 @@ function teardownReview() {
   state.editingId = null;
   state.existingPhotoId = null;
   state.openedAs = null;
+  state.photoDay = null;
   state.corrections = 0;
   // A request may still be in flight -- the reply checks whether the sheet is
   // still open and returns without clearing anything, so the overlay has to
@@ -3138,7 +3145,7 @@ $('save-entry').addEventListener('click', async () => {
         method: 'POST',
         body: JSON.stringify({
           ...body,
-          day: state.day,
+          day: state.photoDay || state.day,
           image: state.photo?.base64,
           mimeType: state.photo?.mimeType
         })
