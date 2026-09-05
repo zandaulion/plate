@@ -2027,10 +2027,29 @@ function offerPhotoDay(takenOn) {
   const note = $('photo-day-note');
   if (!note) return;
   note.hidden = true;
-  if (!(takenOn instanceof Date)) return;
 
-  const photoDay = localDayKey(takenOn);
-  if (photoDay === state.day) return;
+  const today = localDayKey();
+  const photoDay = takenOn instanceof Date ? localDayKey(takenOn) : null;
+
+  // Said where the decision is made, not in a header somebody is not reading.
+  // Logging to a day that is not today is a real thing people do -- filling in
+  // a missed Tuesday -- but doing it without meaning to is how four breakfasts
+  // ended up a week back, and the day view is the one thing on screen a camera
+  // pointed at a plate will not make you check.
+  if (state.day !== today && photoDay !== state.day) {
+    const viewing = dayTitle(state.day);
+    note.innerHTML = `<span>Logging to <strong>${esc(viewing)}</strong>, not today.</span>
+      <button type="button" class="link-btn" id="photo-day-today">Use today</button>`;
+    note.hidden = false;
+    $('photo-day-today').addEventListener('click', () => {
+      state.photoDay = today;
+      note.hidden = true;
+      toast('This entry will be logged to today');
+    });
+    return;
+  }
+
+  if (photoDay === null || photoDay === state.day) return;
 
   const label = takenOn.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
   note.innerHTML = `<span>Taken ${esc(label)}.</span>
@@ -3770,6 +3789,38 @@ installUpdates({
 
 // The day is refetched when the app comes back to the foreground; the update
 // check that used to live here now belongs to installUpdates.
+/**
+ * Coming back to the app after a while means today.
+ *
+ * This used to reload whatever day was on screen and never return. Browse back
+ * a week, put the phone down, pick it up in the morning and photograph
+ * breakfast, and it files a week back -- the header says the date, but nobody
+ * reads a header while pointing a camera. Four breakfasts went to 29 August
+ * that way, and it looked like the day had been wiped.
+ *
+ * Twenty minutes, so flicking between days is never interrupted; and only ever
+ * forward to today, never to some other day. Said out loud rather than done
+ * quietly, because moving somebody's view without telling them is how this
+ * happened in the first place.
+ */
+let hiddenSince = null;
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') loadDay().catch(() => {});
+  if (document.visibilityState === 'hidden') {
+    hiddenSince = Date.now();
+    return;
+  }
+
+  const awayMs = hiddenSince ? Date.now() - hiddenSince : 0;
+  hiddenSince = null;
+  const today = localDayKey();
+
+  if (awayMs > 20 * 60 * 1000 && state.day !== today) {
+    const left = dayTitle(state.day);
+    state.day = today;
+    loadDay().then(() => toast(`Back to today — you were looking at ${left}`)).catch(() => {});
+    return;
+  }
+
+  loadDay().catch(() => {});
 });
