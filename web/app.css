@@ -1911,3 +1911,38 @@ input[type="range"]::-moz-range-thumb {
    must not hand the gesture up to the page as pull-to-refresh. */
 #trends-body, #review-body { overscroll-behavior: contain; }
 #trends .sheet-inner, #review .sheet-inner { touch-action: pan-y; }
+
+/* ------------------------------------------------------- from the gallery */
+
+/* Above the action bar and quiet, because the camera is the path used ten
+   times a week and this one is used occasionally. A fourth button in the bar
+   would have made the primary action one of four equals. */
+.pick-photo {
+  display: block;
+  margin: 0 auto 8px;
+  padding: 6px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: .84rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.pick-photo:active { color: var(--ink-2); }
+
+/* Shown only when the photograph disagrees with the day on screen. */
+.photo-day-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-size: .86rem;
+}

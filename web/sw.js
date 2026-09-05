@@ -21,8 +21,42 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+// Where a shared photo waits between the share sheet handing it over and the
+// page opening. Cache Storage rather than a message: the share arrives as a
+// POST that navigates, so there is no page listening yet to send it to.
+const SHARE_CACHE = 'plate-shared-photo';
+const SHARE_SLOT = '/__shared-photo';
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
+
+  // A photo sent from the gallery's share sheet. Android POSTs it here as a
+  // navigation, so the worker has to take the body, put it somewhere the page
+  // can find, and then send the browser to a page -- a POST cannot render.
+  if (e.request.method === 'POST' && url.pathname === '/share') {
+    e.respondWith((async () => {
+      try {
+        const form = await e.request.formData();
+        const file = form.get('photo');
+        if (file && file.size) {
+          const cache = await caches.open(SHARE_CACHE);
+          await cache.put(SHARE_SLOT, new Response(file, {
+            headers: {
+              'Content-Type': file.type || 'image/jpeg',
+              // The name survives so the page can read the date out of it.
+              'X-Shared-Name': encodeURIComponent(file.name || 'shared.jpg')
+            }
+          }));
+          return Response.redirect('/?shared=1', 303);
+        }
+      } catch (err) {
+        // A share that cannot be read should land the user in the app rather
+        // than on a browser error page with their photo lost.
+      }
+      return Response.redirect('/?shared=0', 303);
+    })());
+    return;
+  }
 
   // Never intercept /bust, API requests, or non-GET requests
   if (url.pathname === '/bust' || url.pathname.startsWith('/api/') || e.request.method !== 'GET') {

@@ -10,6 +10,7 @@ import {
 } from '/core/analysis/estimate.js';
 import { toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
 import { macroAgreement, ageFromBirthYear } from '/core/nutrition.js';
+import { readTakenOn } from '/core/exif.js';
 import { localDayKey } from '/core/day.js';
 import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
@@ -1923,10 +1924,32 @@ async function prepareImage(file) {
 
 $('add-btn').addEventListener('click', () => $('file-input').click());
 
-$('file-input').addEventListener('change', async (ev) => {
+// The gallery, kept off the camera's path. #file-input carries
+// capture="environment", which is what makes the camera one tap rather than a
+// chooser; this is a second input without it, so neither route taxes the other.
+$('pick-photo')?.addEventListener('click', () => $('gallery-input').click());
+$('gallery-input')?.addEventListener('change', (ev) => {
   const file = ev.target.files?.[0];
   ev.target.value = '';
-  if (!file) return;
+  if (file) startPhotoEntry(file);
+});
+
+$('file-input').addEventListener('change', (ev) => {
+  const file = ev.target.files?.[0];
+  ev.target.value = '';
+  if (file) startPhotoEntry(file);
+});
+
+/**
+ * One path for a photograph, whichever door it came through.
+ *
+ * The camera, the gallery button and the share sheet all end here, so the
+ * three cannot drift into three slightly different behaviours.
+ */
+async function startPhotoEntry(file) {
+  // Read before prepareImage: it re-encodes through a canvas, which drops
+  // every EXIF tag including the one saying when the picture was taken.
+  const takenOn = await photoTakenOn(file);
 
   openReview('photo');
   busy('Reading the photo…');
@@ -1938,6 +1961,11 @@ $('file-input').addEventListener('change', async (ev) => {
     // cannot repopulate a closed sheet or leave stale state behind it.
     if (!screenIsOpen('review')) return;
     $('review-photo').src = state.photo.objectUrl;
+    // Offered as soon as the picture is in, not after the model has spoken.
+    // The date came out of the file and does not depend on the analysis
+    // succeeding -- and a photo that fails to read is one somebody is more
+    // likely to be filing from days ago, not less.
+    offerPhotoDay(takenOn);
 
     busy('Working out what is on the plate…');
     const analyseAt = Date.now();
@@ -1950,7 +1978,7 @@ $('file-input').addEventListener('change', async (ev) => {
 
     track('analyse_ok', { seconds: (Date.now() - analyseAt) / 1000, items: data.estimate.items.length });
     state.estimate = data.estimate;
-    state.meal = guessMeal();
+    state.meal = guessMeal(takenOn);
     idle();
     initWeightSlider();
     renderReview();
@@ -1965,10 +1993,60 @@ $('file-input').addEventListener('change', async (ev) => {
       failed(err.message);
     }
   }
-});
+}
 
-function guessMeal() {
-  const h = new Date().getHours();
+/**
+ * The date out of the photograph itself, or null.
+ *
+ * Only the camera roll carries it. A screenshot, a re-saved image or a
+ * download usually does not, and null is the honest answer there -- the file's
+ * modification time says when it arrived on the phone, not when the meal was
+ * in front of anybody.
+ */
+async function photoTakenOn(file) {
+  try {
+    // Only the head of the file: EXIF sits in the first marker segments, and
+    // reading a 8 MB photograph to find a 19-character string is wasteful on a
+    // phone.
+    const head = await file.slice(0, 256 * 1024).arrayBuffer();
+    return readTakenOn(head);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Offer to file the entry on the day the picture was taken.
+ *
+ * Silent when they agree, which is every photograph taken just now -- the
+ * common path must cost nothing. Offered rather than applied: a screenshot of
+ * a menu carries the date it was screenshotted, and moving somebody's entry to
+ * a day they were not looking at is worse than leaving it where they are.
+ */
+function offerPhotoDay(takenOn) {
+  const note = $('photo-day-note');
+  if (!note) return;
+  note.hidden = true;
+  if (!(takenOn instanceof Date)) return;
+
+  const photoDay = localDayKey(takenOn);
+  if (photoDay === state.day) return;
+
+  const label = takenOn.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
+  note.innerHTML = `<span>Taken ${esc(label)}.</span>
+    <button type="button" class="link-btn" id="photo-day-move">Log it there instead</button>`;
+  note.hidden = false;
+  $('photo-day-move').addEventListener('click', () => {
+    state.day = photoDay;
+    note.hidden = true;
+    toast(`This entry will be logged to ${label}`);
+  });
+}
+
+function guessMeal(takenOn) {
+  // A photograph from yesterday evening is a dinner, not whatever meal it is
+  // now. Falls back to the clock when the picture carries no time.
+  const h = (takenOn instanceof Date ? takenOn : new Date()).getHours();
   if (h < 11) return 'breakfast';
   if (h < 16) return 'lunch';
   if (h < 22) return 'dinner';
@@ -3539,11 +3617,49 @@ async function start() {
   startTracking(state.me.trackingEnabled);
   if (!state.me.analysisConfigured) toast('Photo analysis is not configured on this server.');
   await loadDay();
+  await collectSharedPhoto();
   handleUrlActions();
   initStickyDayTracker();
   cycleBiteyMessage();
   startBiteyCycle();
   initDaySwipe();
+}
+
+/**
+ * A photograph handed over by the system share sheet.
+ *
+ * The share arrives as a POST that navigates, so there is no page listening
+ * when it lands. The worker parks it in Cache Storage and redirects here; this
+ * collects it on the way in and drops it into the ordinary photo path, so a
+ * shared picture and a photographed one behave identically from here on.
+ *
+ * Taken out of the cache whatever happens next. A photo left there would be
+ * picked up again by the next launch, logging somebody's lunch twice.
+ */
+async function collectSharedPhoto() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('shared')) return;
+
+  // Tidied immediately, so a reload is not a second share.
+  history.replaceState(history.state, '', location.pathname);
+  if (params.get('shared') !== '1') {
+    toast('That photo could not be read.');
+    return;
+  }
+
+  try {
+    const cache = await caches.open('plate-shared-photo');
+    const res = await cache.match('/__shared-photo');
+    await cache.delete('/__shared-photo');
+    if (!res) return;
+
+    const blob = await res.blob();
+    if (!blob.size) return;
+    const name = decodeURIComponent(res.headers.get('X-Shared-Name') || 'shared.jpg');
+    await startPhotoEntry(new File([blob], name, { type: blob.type || 'image/jpeg' }));
+  } catch (err) {
+    toast('That photo could not be read.');
+  }
 }
 
 /**

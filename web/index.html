@@ -149,6 +149,12 @@
     </div>
   </main>
 
+  <!-- Deliberately small and above the bar rather than a fourth button in it.
+       The camera is the path used ten times a week and it keeps the widest
+       target; this exists for a photograph you already have, and on Android
+       the share sheet is the better route to it anyway. -->
+  <button id="pick-photo" class="pick-photo" type="button">Already have a photo?</button>
+
   <nav class="actions" aria-label="Add food">
     <button id="add-manual" class="action" type="button">
       <svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23">
@@ -179,6 +185,11 @@
   </nav>
 
   <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
+  <!-- No capture attribute, so this opens the picker. Kept as a second input
+       rather than dropping capture from the first: that would turn every
+       photographed meal into a chooser, taxing the common path to serve the
+       rare one. -->
+  <input id="gallery-input" type="file" accept="image/*" hidden>
 
   <div id="review" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="review-heading">
     <div class="sheet-inner">
@@ -190,6 +201,7 @@
 
       <div id="review-body">
         <img id="review-photo" class="review-photo" alt="The meal you photographed">
+        <p id="photo-day-note" class="photo-day-note" hidden></p>
 
         <p id="review-note" class="note" hidden></p>
 
