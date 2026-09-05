@@ -75,11 +75,35 @@ honest best estimate for each one rather than a cautious round number.`;
  * chicken for falafel changes the whole nutrition of the dish, not one line of
  * it.
  */
-export function buildPrompt(correction) {
-  const note = String(correction || '').trim().slice(0, 200);
-  if (!note) return PROMPT;
+/**
+ * The clause that decides what language the food names come back in.
+ *
+ * Only the names are translated. Everything else in the response is numbers
+ * and enum values the parser matches on, and asking for those in another
+ * language would break the parse rather than localise it.
+ */
+export function languageClause(locale) {
+  const name = { ro: 'Romanian' }[locale];
+  if (!name) return '';
+  return `
 
-  return `${PROMPT}
+Write the "name" of every item in ${name}, as someone shopping and cooking in
+that language would say it. Only the names: every other field stays exactly as
+specified above, in English and in the units given.`;
+}
+
+/** The note is shown to the reader verbatim, so it follows their language. */
+export function noteLanguageClause(locale) {
+  const name = { ro: 'Romanian' }[locale];
+  return name ? `\n\nWrite the note in ${name}. The numbers are unaffected.` : '';
+}
+
+export function buildPrompt(correction, locale = 'en') {
+  const note = String(correction || '').trim().slice(0, 200);
+  const language = languageClause(locale);
+  if (!note) return PROMPT + language;
+
+  return `${PROMPT}${language}
 
 IMPORTANT — the person eating this has corrected your reading. They said:
 
@@ -154,7 +178,7 @@ export const LEFTOVERS_SCHEMA = {
   required: ['same_meal', 'items', 'note']
 };
 
-export function buildLeftoversPrompt(items) {
+export function buildLeftoversPrompt(items, locale = 'en') {
   const list = (items || [])
     .map((i) => `  ${i.id}: ${i.name} (${Math.round(i.grams)} g served)`)
     .join('\n');
@@ -187,7 +211,7 @@ false precision helps nobody: 0.75 honestly is worth more than 0.7312.
 
 Set same_meal to false if the second photograph is clearly not the same meal
 as the first, and say why in the note. Guessing in that case would silently
-rewrite what somebody ate.`;
+rewrite what somebody ate.${noteLanguageClause(locale)}`;
 }
 
 /**

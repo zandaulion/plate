@@ -59,6 +59,13 @@ export const HIGH_FIBER_FOODS = [
  * @param {number|null} [params.weightKg=null]
  * @returns {Object|null} recommendation - { type, mood, text, suggestions }
  */
+/**
+ * `text` is the English wording and doubles as the translation key; `textArgs`
+ * carries the numbers that go into its {0}, {1} slots. Core stays free of any
+ * locale — it does not know which language the caller renders in — while the
+ * front end can look the sentence up and fill it in. Interpolating here would
+ * have produced a finished English sentence that no catalogue could match.
+ */
 export function getMacroRecommendation({
   totals = { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 },
   split = null,
@@ -102,7 +109,7 @@ export function getMacroRecommendation({
       return {
         type: 'start',
         mood: 'happy',
-        text: 'Ready for a healthy vegetarian day! Bitey is here to help keep your protein up and macros balanced. 🥦🦖',
+        text: 'Ready for a healthy vegetarian day! Bitey is here to help keep your protein up and macros balanced. 🥦🦖', textArgs: [],
         suggestions: []
       };
     }
@@ -110,7 +117,7 @@ export function getMacroRecommendation({
       return {
         type: 'start',
         mood: 'happy',
-        text: 'Plant power day! What delicious meal or snack are we logging first? 🌿🦖',
+        text: 'Plant power day! What delicious meal or snack are we logging first? 🌿🦖', textArgs: [],
         suggestions: []
       };
     }
@@ -118,14 +125,14 @@ export function getMacroRecommendation({
       return {
         type: 'start',
         mood: 'happy',
-        text: 'Keto mode active! Keep those carbs low and healthy fats flowing. 🥑🦖',
+        text: 'Keto mode active! Keep those carbs low and healthy fats flowing. 🥑🦖', textArgs: [],
         suggestions: []
       };
     }
     return {
       type: 'start',
       mood: 'happy',
-      text: 'Rawr! What are we eating today? Log your meals and Bitey will watch your macros!',
+      text: 'Rawr! What are we eating today? Log your meals and Bitey will watch your macros!', textArgs: [],
       suggestions: []
     };
   }
@@ -135,7 +142,7 @@ export function getMacroRecommendation({
     return {
       type: 'keto_carbs_high',
       mood: 'thinking',
-      text: `Carb check! You've had ${Math.round(totals.carbs)}g carbs today. For ketosis, lean into healthy fats and low-carb greens.`,
+      text: 'Carb check! You\'ve had {0}g carbs today. For ketosis, lean into healthy fats and low-carb greens.', textArgs: [Math.round(totals.carbs)],
       suggestions: LEAN_PROTEIN_FOODS.keto
     };
   }
@@ -145,7 +152,7 @@ export function getMacroRecommendation({
     return {
       type: 'protein_target_met',
       mood: 'happy',
-      text: `Protein target crushed today (${protein}g / ${proteinTargetG}g)! Your muscles and energy are well fueled. 💪🦖`,
+      text: 'Protein target crushed today ({0}g / {1}g)! Your muscles and energy are well fueled. 💪🦖', textArgs: [protein, proteinTargetG],
       suggestions: []
     };
   }
@@ -156,7 +163,7 @@ export function getMacroRecommendation({
     return {
       type: 'fiber_low',
       mood: 'thinking',
-      text: `Fiber check! You're at ${fiber}g today (daily target: 25–35g). Adding berries, chia seeds, or legumes will keep digestion thriving! 🌾🦖`,
+      text: 'Fiber check! You\'re at {0}g today (daily target: 25–35g). Adding berries, chia seeds, or legumes will keep digestion thriving! 🌾🦖', textArgs: [fiber],
       suggestions: HIGH_FIBER_FOODS.slice(0, 3)
     };
   }
@@ -166,7 +173,7 @@ export function getMacroRecommendation({
     return {
       type: 'fiber_goal_met',
       mood: 'happy',
-      text: `Outstanding fiber intake today (${fiber}g)! Dinosaur digestion is running smooth as clockwork! 🥦✨`,
+      text: 'Outstanding fiber intake today ({0}g)! Dinosaur digestion is running smooth as clockwork! 🥦✨', textArgs: [fiber],
       suggestions: []
     };
   }
@@ -176,7 +183,7 @@ export function getMacroRecommendation({
     return {
       type: 'balanced',
       mood: 'happy',
-      text: `Awesome macro balance today! Protein (${pPct}%), carbs (${cPct}%), and fats (${fPct}%) are spot on. Bitey approves! 🦖✨`,
+      text: 'Awesome macro balance today! Protein ({0}%), carbs ({1}%), and fats ({2}%) are spot on. Bitey approves! 🦖✨', textArgs: [pPct, cPct, fPct],
       suggestions: []
     };
   }
@@ -187,14 +194,14 @@ export function getMacroRecommendation({
       return {
         type: 'high_fat_plentiful_protein',
         mood: 'thinking',
-        text: `Protein is at ${protein}g of your ${proteinTargetG}g target, and fats took most of the rest (${fPct}%). Keep your next bite light and balanced. 🥑`,
+        text: 'Protein is at {0}g of your {1}g target, and fats took most of the rest ({2}%). Keep your next bite light and balanced. 🥑', textArgs: [protein, proteinTargetG, fPct],
         suggestions: []
       };
     }
     return {
       type: 'solid_protein',
       mood: 'happy',
-      text: `Good protein haul today — ${protein}g of your ${proteinTargetG}g target. 💪🦖`,
+      text: 'Good protein haul today — {0}g of your {1}g target. 💪🦖', textArgs: [protein, proteinTargetG],
       suggestions: []
     };
   }
@@ -204,7 +211,7 @@ export function getMacroRecommendation({
     return {
       type: 'veg_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are high today (${fPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. Lean plant or dairy protein would close the gap!`,
+      text: 'Fats are high today ({0}%) and protein is at {1}g of your {2}g target. Lean plant or dairy protein would close the gap!', textArgs: [fPct, protein, proteinTargetG],
       suggestions: LEAN_PROTEIN_FOODS.vegetarian.slice(0, 3)
     };
   }
@@ -214,7 +221,7 @@ export function getMacroRecommendation({
     return {
       type: 'vegan_low_protein',
       mood: 'thinking',
-      text: `Plant protein is at ${protein}g of your ${proteinTargetG}g target today. Seitan, edamame or lentils would close the gap!`,
+      text: 'Plant protein is at {0}g of your {1}g target today. Seitan, edamame or lentils would close the gap!', textArgs: [protein, proteinTargetG],
       suggestions: LEAN_PROTEIN_FOODS.vegan.slice(0, 3)
     };
   }
@@ -224,7 +231,7 @@ export function getMacroRecommendation({
     return {
       type: 'pesc_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are up (${fPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. A light fish or plant protein would balance the day nicely!`,
+      text: 'Fats are up ({0}%) and protein is at {1}g of your {2}g target. A light fish or plant protein would balance the day nicely!', textArgs: [fPct, protein, proteinTargetG],
       suggestions: LEAN_PROTEIN_FOODS.pescatarian.slice(0, 3)
     };
   }
@@ -234,7 +241,7 @@ export function getMacroRecommendation({
     return {
       type: 'omni_high_fat_low_protein',
       mood: 'thinking',
-      text: `Fats are ${fPct}% of calories and protein is at ${protein}g of your ${proteinTargetG}g target. Reach for something lean on the next bite!`,
+      text: 'Fats are {0}% of calories and protein is at {1}g of your {2}g target. Reach for something lean on the next bite!', textArgs: [fPct, protein, proteinTargetG],
       suggestions: LEAN_PROTEIN_FOODS.omnivore.slice(0, 3)
     };
   }
@@ -245,7 +252,7 @@ export function getMacroRecommendation({
     return {
       type: 'goal_protein_behind',
       mood: 'thinking',
-      text: `Aiming for high protein today — you're at ${protein}g of your ${proteinTargetG}g target. Time to fuel up with some protein-dense foods!`,
+      text: 'Aiming for high protein today — you\'re at {0}g of your {1}g target. Time to fuel up with some protein-dense foods!', textArgs: [protein, proteinTargetG],
       suggestions: pool.slice(0, 3)
     };
   }
@@ -256,7 +263,7 @@ export function getMacroRecommendation({
     return {
       type: 'high_carb_low_protein',
       mood: 'thinking',
-      text: `Carbs are taking the lead today (${cPct}%) and protein is at ${protein}g of your ${proteinTargetG}g target. Adding some protein will keep energy steady!`,
+      text: 'Carbs are taking the lead today ({0}%) and protein is at {1}g of your {2}g target. Adding some protein will keep energy steady!', textArgs: [cPct, protein, proteinTargetG],
       suggestions: pool.slice(0, 3)
     };
   }

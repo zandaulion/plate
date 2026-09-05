@@ -73,7 +73,21 @@ function cleanName(...parts) {
  * and no nutrition is worse than no result: it looks like a hit, adds zero
  * calories, and quietly under-reports the day.
  */
-export function fromOpenFoodFacts(product) {
+/**
+ * Open Food Facts files a name per language as `product_name_<code>`, and the
+ * generic `product_name` in whatever the contributor typed. A Romanian product
+ * usually has the Romanian field; an imported one usually does not, so the
+ * generic name is the fallback rather than an error.
+ */
+function localisedName(product, locale) {
+  if (locale && locale !== 'en') {
+    const tagged = product[`product_name_${locale}`];
+    if (typeof tagged === 'string' && tagged.trim()) return tagged;
+  }
+  return product.product_name;
+}
+
+export function fromOpenFoodFacts(product, locale = 'en') {
   if (!product || typeof product !== 'object') return null;
 
   const n = product.nutriments || {};
@@ -84,7 +98,8 @@ export function fromOpenFoodFacts(product) {
   }
   if (calories === null) return null;
 
-  const name = cleanName(product.product_name, product.brands ? `(${product.brands})` : '');
+  const name = cleanName(localisedName(product, locale),
+                         product.brands ? `(${product.brands})` : '');
   if (!name) return null;
 
   const per100 = {

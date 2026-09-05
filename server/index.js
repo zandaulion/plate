@@ -15,6 +15,20 @@ import {
   ThrottledError
 } from './auth.js';
 import { analysePhoto, readLeftovers, AnalysisError, isConfigured, getModel } from './gemini.js';
+
+/**
+ * The interface language of the device making the request.
+ *
+ * Sent as a header rather than stored on the account: the language belongs to
+ * the device that is looking at the screen, and two devices on one account can
+ * reasonably differ. Anything unrecognised falls back to English rather than
+ * reaching the model as an unknown language name.
+ */
+const SUPPORTED_LOCALES = new Set(['en', 'ro']);
+const localeOf = (req) => {
+  const raw = String(req.get('x-plate-locale') || '').toLowerCase().split('-')[0];
+  return SUPPORTED_LOCALES.has(raw) ? raw : 'en';
+};
 import {
   lookupBarcode, searchFoods, LookupError, usdaConfigured,
   productImagePath, hasProductImage
@@ -350,7 +364,8 @@ app.post('/api/analyse', requireDevice, asyncRoute(async (req, res) => {
   try {
     ({ raw, usage, model } = await analysePhoto(
       image, mimeType || 'image/jpeg',
-      typeof correction === 'string' ? correction.slice(0, 200) : null));
+      typeof correction === 'string' ? correction.slice(0, 200) : null,
+      localeOf(req)));
   } catch (err) {
     // Nothing was spent if the request never got as far as the model.
     if (err.status === 503 || err.status === 429) refund(req.device.account_id);
@@ -380,7 +395,7 @@ app.post('/api/analyse', requireDevice, asyncRoute(async (req, res) => {
 // ----------------------------------------------------------------- foods
 
 app.get('/api/foods/barcode/:code', requireDevice, asyncRoute(async (req, res) => {
-  res.json({ food: await lookupBarcode(req.params.code) });
+  res.json({ food: await lookupBarcode(req.params.code, localeOf(req)) });
 }));
 
 /**
@@ -429,7 +444,7 @@ app.get('/api/foods/image/:barcode', requireDevice, (req, res) => {
 
 app.get('/api/foods/search', requireDevice, asyncRoute(async (req, res) => {
   res.json({
-    results: await searchFoods(req.query.q),
+    results: await searchFoods(req.query.q, localeOf(req)),
     genericSearch: usdaConfigured()
   });
 }));
@@ -705,7 +720,8 @@ app.post('/api/entries/:id/leftovers', requireDevice, asyncRoute(async (req, res
       fs.readFileSync(file).toString('base64'),
       image,
       row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
-      items
+      items,
+      localeOf(req)
     ));
   } catch (err) {
     // Nothing was spent if the request never reached the model.
@@ -813,7 +829,8 @@ app.post('/api/entries/:id/reanalyse', requireDevice, asyncRoute(async (req, res
     ({ raw, usage, model } = await analysePhoto(
       fs.readFileSync(file).toString('base64'),
       row.photo_id.endsWith('.png') ? 'image/png' : 'image/jpeg',
-      correction));
+      correction,
+      localeOf(req)));
   } catch (err) {
     if (err.status === 503 || err.status === 429) refund(req.device.account_id);
     throw err;

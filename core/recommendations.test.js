@@ -2,6 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getMacroRecommendation, LEAN_PROTEIN_FOODS } from './recommendations.js';
 
+/**
+ * The English sentence a caller would show.
+ *
+ * `text` is now a template and `textArgs` the numbers for it, so the front end
+ * can translate. These assertions are about the wording and the figures in it,
+ * which is exactly what filling the template back in preserves.
+ */
+const say = (rec) =>
+  String(rec.text).replace(/\{(\d+)\}/g, (_, i) => String(rec.textArgs?.[Number(i)] ?? ''));
+
 test('recommends lean vegetable protein for vegetarian with high fat and low protein', () => {
   const rec = getMacroRecommendation({
     totals: { calories: 800, protein: 20, fat: 42, carbs: 80 },
@@ -14,10 +24,10 @@ test('recommends lean vegetable protein for vegetarian with high fat and low pro
   assert.ok(rec, 'Expected a recommendation');
   assert.equal(rec.type, 'veg_high_fat_low_protein');
   assert.equal(rec.mood, 'thinking');
-  assert.match(rec.text, /Fats are high today/);
+  assert.match(say(rec), /Fats are high today/);
   // The target is the point of the message: "20g" alone says nothing about
   // whether the day went well.
-  assert.match(rec.text, /20g of your 83g target/);
+  assert.match(say(rec), /20g of your 83g target/);
   assert.ok(rec.suggestions.length > 0);
   assert.ok(rec.suggestions.some((s) => s.name.toLowerCase().includes('edamame') || s.name.toLowerCase().includes('skyr')));
 });
@@ -46,7 +56,7 @@ test('alerts when keto carbs exceed threshold', () => {
 
   assert.ok(rec);
   assert.equal(rec.type, 'keto_carbs_high');
-  assert.match(rec.text, /Carb check/);
+  assert.match(say(rec), /Carb check/);
   assert.ok(rec.suggestions.some((s) => s.name.toLowerCase().includes('avocado')));
 });
 
@@ -62,7 +72,7 @@ test('celebrates balanced macros when in target range', () => {
   assert.ok(rec);
   assert.equal(rec.type, 'balanced');
   assert.equal(rec.mood, 'happy');
-  assert.match(rec.text, /Awesome macro balance/);
+  assert.match(say(rec), /Awesome macro balance/);
 });
 
 test('returns gentle start message for fresh day', () => {
@@ -75,7 +85,7 @@ test('returns gentle start message for fresh day', () => {
 
   assert.ok(rec);
   assert.equal(rec.type, 'start');
-  assert.match(rec.text, /vegetarian/i);
+  assert.match(say(rec), /vegetarian/i);
 });
 
 test('alerts when daily fiber is low for logged food', () => {
@@ -90,7 +100,7 @@ test('alerts when daily fiber is low for logged food', () => {
   assert.ok(rec);
   assert.equal(rec.type, 'fiber_low');
   assert.equal(rec.mood, 'thinking');
-  assert.match(rec.text, /Fiber check/);
+  assert.match(say(rec), /Fiber check/);
   assert.ok(rec.suggestions.some((s) => s.name.toLowerCase().includes('chia') || s.name.toLowerCase().includes('raspberries')));
 });
 
@@ -106,7 +116,7 @@ test('celebrates when fiber goal is achieved', () => {
   assert.ok(rec);
   assert.equal(rec.type, 'fiber_goal_met');
   assert.equal(rec.mood, 'happy');
-  assert.match(rec.text, /fiber intake/i);
+  assert.match(say(rec), /fiber intake/i);
 });
 
 test('does not flag 98g protein as lagging even if percentage is under 20%', () => {
@@ -122,7 +132,7 @@ test('does not flag 98g protein as lagging even if percentage is under 20%', () 
   assert.ok(rec);
   assert.notEqual(rec.type, 'veg_high_fat_low_protein');
   assert.notEqual(rec.type, 'goal_protein_behind');
-  assert.match(rec.text, /98g/);
+  assert.match(say(rec), /98g/);
 });
 
 test('celebrates when protein target is met for body weight', () => {
@@ -137,7 +147,7 @@ test('celebrates when protein target is met for body weight', () => {
 
   assert.ok(rec);
   assert.equal(rec.type, 'protein_target_met');
-  assert.match(rec.text, /crushed/i);
+  assert.match(say(rec), /crushed/i);
 });
 
 test('the day that prompted this: 75g protein names the target it is short of', () => {
@@ -155,8 +165,8 @@ test('the day that prompted this: 75g protein names the target it is short of', 
 
   assert.ok(rec);
   assert.equal(rec.type, 'veg_high_fat_low_protein');
-  assert.match(rec.text, /75g of your 116g target/);
-  assert.doesNotMatch(rec.text, /lagging/);
+  assert.match(say(rec), /75g of your 116g target/);
+  assert.doesNotMatch(say(rec), /lagging/);
 });
 
 test('every low-protein message states the target, whatever the diet', () => {
@@ -178,7 +188,7 @@ test('every low-protein message states the target, whatever the diet', () => {
       weightKg: 80
     });
     assert.equal(rec.type, type, diet);
-    assert.match(rec.text, /45g of your 88g target/, diet);
+    assert.match(say(rec), /45g of your 88g target/, diet);
   }
 
   const vegan = getMacroRecommendation({
@@ -190,7 +200,7 @@ test('every low-protein message states the target, whatever the diet', () => {
     weightKg: 80
   });
   assert.equal(vegan.type, 'vegan_low_protein');
-  assert.match(vegan.text, /40g of your 88g target/);
+  assert.match(say(vegan), /40g of your 88g target/);
 });
 
 test('a plentiful day is not dressed up as "on track" when the goal is higher', () => {
@@ -206,6 +216,6 @@ test('a plentiful day is not dressed up as "on track" when the goal is higher', 
   });
 
   assert.ok(rec);
-  assert.match(rec.text, /85g of your 116g target/);
-  assert.doesNotMatch(rec.text, /well on track/);
+  assert.match(say(rec), /85g of your 116g target/);
+  assert.doesNotMatch(say(rec), /well on track/);
 });

@@ -27,11 +27,11 @@ export class AnalysisError extends Error {
  * actually costs per meal; the measured figure was $0.0011, and that should be
  * observable in production rather than assumed from a one-off probe.
  */
-export async function analysePhoto(imageBase64, mimeType = 'image/jpeg', correction = null) {
+export async function analysePhoto(imageBase64, mimeType = 'image/jpeg', correction = null, locale = 'en') {
   return call(
     [
       { inline_data: { mime_type: mimeType, data: imageBase64 } },
-      { text: buildPrompt(correction) }
+      { text: buildPrompt(correction, locale) }
     ],
     RESPONSE_SCHEMA
   );
@@ -47,14 +47,14 @@ export async function analysePhoto(imageBase64, mimeType = 'image/jpeg', correct
  * The order matters and is stated in the prompt -- before, then after -- since
  * nothing in the images themselves says which way round time ran.
  */
-export async function readLeftovers(beforeBase64, afterBase64, mimeType, items) {
+export async function readLeftovers(beforeBase64, afterBase64, mimeType, items, locale = 'en') {
   return call(
     [
       { text: 'Before eating:' },
       { inline_data: { mime_type: mimeType, data: beforeBase64 } },
       { text: 'After eating:' },
       { inline_data: { mime_type: 'image/jpeg', data: afterBase64 } },
-      { text: buildLeftoversPrompt(items) }
+      { text: buildLeftoversPrompt(items, locale) }
     ],
     LEFTOVERS_SCHEMA
   );

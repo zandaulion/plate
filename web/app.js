@@ -16,6 +16,10 @@ import { start as startTracking, track, screen } from '/track.js';
 import { smoothSeries } from '/core/weight.js';
 import { getMacroRecommendation } from '/core/recommendations.js';
 import { installUpdates } from '/pwa-update.js';
+import {
+  t, plural, load as loadLocale, setLocale, locale, applyToDom,
+  LOCALES, LOCALE_NAMES
+} from '/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -45,7 +49,13 @@ const state = {
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    // Sent on every call so the server never has to guess: it decides what
+    // language the model names food in and writes its notes in.
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Plate-Locale': locale(),
+      ...(options.headers || {})
+    }
   });
 
   if (res.status === 401) {
@@ -72,7 +82,7 @@ function toast(message, undoAction = null) {
   clearTimeout(toastTimer);
 
   if (undoAction) {
-    el.innerHTML = `<span>${esc(message)}</span><button type="button" class="toast-undo">Undo</button>`;
+    el.innerHTML = `<span>${esc(message)}</span><button type="button" class="toast-undo">${esc(t('Undo'))}</button>`;
     const btn = el.querySelector('.toast-undo');
     btn?.addEventListener('click', async () => {
       clearTimeout(toastTimer);
@@ -181,10 +191,10 @@ let gateMode = 'invite';
 function setGateMode(mode) {
   gateMode = mode;
   const m = GATE_MODES[mode];
-  $('gate-label').textContent = m.label;
+  $('gate-label').textContent = t(m.label);
   $('invite').placeholder = m.placeholder;
   $('invite').value = '';
-  $('gate-hint').textContent = m.hint;
+  $('gate-hint').textContent = t(m.hint);
   $('gate-error').hidden = true;
   document.querySelectorAll('[data-gate]').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.gate === mode));
@@ -216,9 +226,9 @@ $('redeem-form').addEventListener('submit', async (ev) => {
       renderRecoveryState();
       $('settings').hidden = false;
       openScreen('settings', () => { $('settings').hidden = true; });
-      showCode('Save this recovery code', body.recoveryCode,
-        'It is the only way back into your log if you lose this device. '
-        + 'It is stored hashed and cannot be shown again.', true);
+      showCode(t('Save this recovery code'), body.recoveryCode,
+        t('It is the only way back into your log if you lose this device. It is stored hashed and cannot be shown again.'),
+        true);
     }
   } catch (e) {
     err.textContent = e.message;
@@ -230,15 +240,15 @@ $('redeem-form').addEventListener('submit', async (ev) => {
 
 function dayTitle(key) {
   const today = localDayKey();
-  if (key === today) return 'Today';
+  if (key === today) return t('Today');
 
   const [y, m, d] = key.split('-').map(Number);
   const date = new Date(y, m - 1, d);
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  if (key === localDayKey(yesterday)) return 'Yesterday';
+  if (key === localDayKey(yesterday)) return t('Yesterday');
 
-  return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return date.toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function shiftDay(key, delta) {
@@ -264,9 +274,11 @@ function renderProfileBanner(expenditure) {
 
   if (!missing.length) { el.hidden = true; return; }
 
-  const names = missing.map((f) => f.label);
+  // The labels come from core in English and are translated here, like every
+  // other server-supplied label: core has no locale of its own.
+  const names = missing.map((f) => t(f.label));
   const list = names.length > 1
-    ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+    ? `${names.slice(0, -1).join(', ')}${t(' and ')}${names[names.length - 1]}`
     : names[0];
 
   el.hidden = false;
@@ -279,11 +291,9 @@ function renderProfileBanner(expenditure) {
       </svg>
     </span>
     <div class="body">
-      <h2>Add your ${esc(list)}</h2>
-      <p>Without them the app cannot work out what you burn, so a day's total has
-         nothing to sit against. Real numbers, not round ones — the estimate is
-         only as good as what it is given.</p>
-      <button class="act" type="button" id="banner-open">Fill them in</button>
+      <h2>${esc(t('Add your {0}', list))}</h2>
+      <p>${esc(t("Without them the app cannot work out what you burn, so a day's total has nothing to sit against. Real numbers, not round ones — the estimate is only as good as what it is given."))}</p>
+      <button class="act" type="button" id="banner-open">${esc(t('Fill them in'))}</button>
     </div>`;
 
   $('banner-open').addEventListener('click', () => $('open-profile').click());
@@ -297,7 +307,7 @@ function renderMaintenance(summary, expenditure) {
     // The banner above is already asking; repeating it here would be two
     // requests for the same thing on one screen.
     el.className = 'maintenance none';
-    el.textContent = 'What you burn is not known yet.';
+    el.textContent = t('What you burn is not known yet.');
     return;
   }
 
@@ -306,26 +316,30 @@ function renderMaintenance(summary, expenditure) {
   // How the figure was arrived at changes what it is worth, so it is stated
   // rather than left for the user to assume.
   const source = measured
-    ? 'measured from your weight and what you logged'
-    : 'estimated from your details';
+    ? t('measured from your weight and what you logged')
+    : t('estimated from your details');
 
   // Nothing logged is not a deficit -- it is a day that has not been recorded
   // yet. Reporting "2,294 under" against an empty log states a fast that did
   // not happen.
   if (!summary.entries) {
-    el.innerHTML = `You burn about <b>${m.kcal} kcal</b> a day &mdash; ${source},
-      and spanning ${m.low}&ndash;${m.high}.`;
+    el.innerHTML = t('You burn about <b>{0} kcal</b> a day — {1}, and spanning {2}–{3}.',
+                     m.kcal, source, m.low, m.high);
     return;
   }
 
   const b = summary.balance;
   if (b?.withinBand) {
-    el.innerHTML = `About what you burn &mdash; roughly <b>${m.low}&ndash;${m.high} kcal</b> a day,
-      ${source}.`;
+    el.innerHTML = t('About what you burn — roughly <b>{0}–{1} kcal</b> a day, {2}.',
+                     m.low, m.high, source);
   } else if (b) {
-    const word = b.kcal < 0 ? 'under' : 'over';
-    el.innerHTML = `<b>${Math.abs(b.kcal)} kcal</b> ${word} the <b>${m.kcal}</b> you burn
-      &mdash; ${source}, and spanning ${m.low}&ndash;${m.high}.`;
+    // Under and over are separate keys: Romanian does not put the preposition
+    // where English does, so a swapped word in a shared sentence will not do.
+    el.innerHTML = b.kcal < 0
+      ? t('<b>{0} kcal</b> under the <b>{1}</b> you burn — {2}, and spanning {3}–{4}.',
+          Math.abs(b.kcal), m.kcal, source, m.low, m.high)
+      : t('<b>{0} kcal</b> over the <b>{1}</b> you burn — {2}, and spanning {3}–{4}.',
+          Math.abs(b.kcal), m.kcal, source, m.low, m.high);
   }
 }
 
@@ -339,7 +353,7 @@ const MACRO_META = [
 function renderMacros(el, totals) {
   el.innerHTML = MACRO_META.map(([key, label, colour, lowConf]) => `
     <div class="${lowConf ? 'lowconf' : ''}">
-      <dt style="--dot:${colour}">${label}</dt>
+      <dt style="--dot:${colour}">${esc(t(label))}</dt>
       <dd>${Math.round(totals[key] || 0)}<small>g</small></dd>
     </div>`).join('');
 }
@@ -422,7 +436,7 @@ function renderEntries(entries) {
     }
 
     const time = new Date(e.createdAt)
-      .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      .toLocaleTimeString(locale(), { hour: 'numeric', minute: '2-digit' });
 
     const p = Math.round(e.totals?.protein ?? 0);
     const c = Math.round(e.totals?.carbs ?? 0);
@@ -431,7 +445,7 @@ function renderEntries(entries) {
     return `<li class="entry" data-id="${esc(e.id)}">
       ${thumb}
       <div class="entry-main">
-        <div class="entry-foods">${esc(foods) || 'Meal'}</div>
+        <div class="entry-foods">${esc(foods) || esc(t('Meal'))}</div>
         <div class="entry-meta">
           <span class="entry-meal">${e.meal ? esc(e.meal) : time}</span>
           <span class="entry-meta-sep">•</span>
@@ -476,9 +490,9 @@ function renderQuickBiteTray(recents) {
   const suggestions = getGrazingSuggestions(recents || [], { limit: 4 });
 
   const presetHtml = QUICK_BITES.map((b) =>
-    `<button class="bite-tile preset" type="button" data-preset="${esc(b.id)}" aria-label="Log ${esc(b.name)}">
+    `<button class="bite-tile preset" type="button" data-preset="${esc(b.id)}" aria-label="${esc(t('Log {0}', t(b.name)))}">
       <div class="tile-glyph">${b.icon || '🍏'}</div>
-      <div class="tile-name">${esc(b.label || b.name)}</div>
+      <div class="tile-name">${esc(t(b.label || b.name))}</div>
       <div class="tile-badge">+${b.calories}<small>kcal</small></div>
     </button>`
   ).join('');
@@ -497,7 +511,7 @@ function renderQuickBiteTray(recents) {
   }).join('');
 
   const customHtml = `
-    <button class="bite-tile custom-tile" type="button" data-action="custom" aria-label="Add custom bite">
+    <button class="bite-tile custom-tile" type="button" data-action="custom" aria-label="${esc(t('Add custom bite'))}">
       <div class="tile-glyph plus-glyph">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </div>
@@ -627,13 +641,15 @@ const BITEY_CHEERS = [
 let lastCheerIdx = -1;
 
 function nextCheer() {
-  if (!BITEY_CHEERS.length) return "Logged! 🦖";
+  if (!BITEY_CHEERS.length) return t('Logged! 🦖');
   let i = Math.floor(Math.random() * BITEY_CHEERS.length);
   // Never the same line twice running: a repeat reads as a canned response and
   // is the fastest way for this to stop meaning anything.
   if (i === lastCheerIdx && BITEY_CHEERS.length > 1) i = (i + 1) % BITEY_CHEERS.length;
   lastCheerIdx = i;
-  return BITEY_CHEERS[i];
+  // Translated on the way out, not in the array: the array is built once and
+  // the language can change while the app is open.
+  return t(BITEY_CHEERS[i]);
 }
 
 const CHEER_MS = 3600;
@@ -732,13 +748,13 @@ let biteyCycleTimer = null;
 let lastBiteyQuoteIdx = -1;
 
 function getNextBiteyQuote() {
-  if (!BITEY_QUOTES.length) return "Rawr! 🦕";
+  if (!BITEY_QUOTES.length) return t('Rawr! 🦕');
   let idx = Math.floor(Math.random() * BITEY_QUOTES.length);
   if (idx === lastBiteyQuoteIdx && BITEY_QUOTES.length > 1) {
     idx = (idx + 1) % BITEY_QUOTES.length;
   }
   lastBiteyQuoteIdx = idx;
-  return BITEY_QUOTES[idx];
+  return t(BITEY_QUOTES[idx]);
 }
 
 function cycleBiteyMessage(specificMessage = null, bounce = false) {
@@ -753,7 +769,7 @@ function cycleBiteyMessage(specificMessage = null, bounce = false) {
   }
 
   const message = specificMessage || (state.activeBiteyRecommendation?.text && !bounce
-    ? state.activeBiteyRecommendation.text
+    ? recText(state.activeBiteyRecommendation)
     : getNextBiteyQuote());
 
   if (bounce && btn) {
@@ -770,12 +786,18 @@ function cycleBiteyMessage(specificMessage = null, bounce = false) {
     speech.textContent = message;
     speech.style.opacity = '1';
     if (wrap && (!state.lastBiteMunchTime || (Date.now() - state.lastBiteMunchTime >= 4500))) {
-      const mood = message === state.activeBiteyRecommendation?.text
+      const mood = message === recText(state.activeBiteyRecommendation)
         ? (state.activeBiteyRecommendation?.mood || 'happy')
         : 'happy';
       wrap.innerHTML = getBiteySvg(mood);
     }
   }, 150);
+}
+
+/** A recommendation as a sentence in the current language. */
+function recText(rec) {
+  if (!rec?.text) return '';
+  return t(rec.text, ...(rec.textArgs || []));
 }
 
 function startBiteyCycle() {
@@ -830,12 +852,14 @@ $('p-birth-year')?.addEventListener('input', showDerivedAge);
  * readings over five days to do the thing they had already done.
  */
 function trendWanted(gap) {
-  if (!gap) return 'trend on the way';
+  if (!gap) return t('trend on the way');
   const { readings = 0, days = 0 } = gap;
-  if (readings > 0 && days > 0) return 'trend needs 3 weigh-ins over a week';
-  if (readings > 0) return `trend needs ${readings} more weigh-in${readings > 1 ? 's' : ''}`;
-  if (days > 0) return `trend needs ${days} more day${days > 1 ? 's' : ''}`;
-  return 'trend on the way';
+  if (readings > 0 && days > 0) return t('trend needs 3 weigh-ins over a week');
+  // Was `weigh-in${n > 1 ? 's' : ''}`, which is English's rule and not
+  // Romanian's; the catalogue carries the forms now.
+  if (readings > 0) return plural('trend needs {0} more weigh-ins', readings);
+  if (days > 0) return plural('trend needs {0} more days', days);
+  return t('trend on the way');
 }
 
 function updateBiteyCompanion(summary, split = null, entries = []) {
@@ -885,14 +909,14 @@ function updateBiteyCompanion(summary, split = null, entries = []) {
   if (rec) {
     state.activeBiteyRecommendation = rec;
     wrap.innerHTML = getBiteySvg(rec.mood || 'happy');
-    speech.textContent = rec.text;
+    speech.textContent = recText(rec);
 
     if (actionsEl) {
       if (rec.suggestions?.length) {
         actionsEl.hidden = false;
         actionsEl.innerHTML = rec.suggestions.map((s) =>
           `<button type="button" class="bitey-chip" data-name="${esc(s.name)}" data-calories="${s.calories}" data-grams="${s.grams}" data-protein="${s.protein}" data-fat="${s.fat}" data-carbs="${s.carbs}" data-fiber="${s.fiber ?? 0}">
-            <span>+ ${esc(s.name)}</span>
+            <span>+ ${esc(t(s.name))}</span>
             <span class="bitey-chip-cal">${s.calories} kcal</span>
           </button>`
         ).join('');
@@ -914,7 +938,7 @@ function updateBiteyCompanion(summary, split = null, entries = []) {
   // quotes from being restarted on every render, and it was quietly protecting
   // the celebration as well -- so "Logged it before I forgot" sat on the card
   // until the next reload, long after the dance had finished.
-  const stale = state.activeBiteyRecommendation?.text || null;
+  const stale = recText(state.activeBiteyRecommendation) || null;
   const spent = state.lastCheerText || null;
   state.activeBiteyRecommendation = null;
   if (actionsEl) {
@@ -1037,10 +1061,10 @@ $('quick-bite-chips')?.addEventListener('click', async (ev) => {
     }
     const entryId = res.entry?.id;
     await loadDay();
-    toast(`Logged ${item.name}`, entryId ? async () => {
+    toast(t('Logged {0}', item.name), entryId ? async () => {
       await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
       track('entry_deleted');
-      toast('Undone');
+      toast(t('Undone'));
       await loadDay();
     } : null);
   } catch (err) {
@@ -1068,7 +1092,7 @@ $('quick-custom-form')?.addEventListener('submit', async (ev) => {
   const kcal = Number($('quick-kcal').value);
   const grams = Number($('quick-grams').value) || (kcal <= 70 ? 15 : kcal <= 150 ? 30 : 50);
 
-  if (!Number.isFinite(kcal) || kcal <= 0) return toast('Enter calories');
+  if (!Number.isFinite(kcal) || kcal <= 0) return toast(t('Enter calories'));
 
   const item = createQuickBiteItem({ name, calories: kcal, grams });
   const estimate = addManualItem({ items: [], portionSource: 'model', note: '' }, item);
@@ -1101,10 +1125,10 @@ $('quick-custom-form')?.addEventListener('submit', async (ev) => {
     $('quick-custom-dialog').hidden = true;
     const entryId = res.entry?.id;
     await loadDay();
-    toast(`Logged ${name} (${kcal} kcal)`, entryId ? async () => {
+    toast(t('Logged {0} ({1} kcal)', name, kcal), entryId ? async () => {
       await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
       track('entry_deleted');
-      toast('Undone');
+      toast(t('Undone'));
       await loadDay();
     } : null);
   } catch (err) {
@@ -1166,10 +1190,10 @@ $('bitey-actions')?.addEventListener('click', async (ev) => {
 
     const entryId = res.id;
     await loadDay();
-    toast(`Logged ${name} (${kcal} kcal)`, entryId ? async () => {
+    toast(t('Logged {0} ({1} kcal)', name, kcal), entryId ? async () => {
       await api(`/api/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
       track('entry_deleted');
-      toast('Undone');
+      toast(t('Undone'));
       await loadDay();
     } : null);
   } catch (err) {
@@ -1311,7 +1335,7 @@ async function goToNextDay(source = 'button') {
       setTimeout(() => cards.classList.remove('card-wobble-blocked'), 340);
     }
     if ('vibrate' in navigator) try { navigator.vibrate([15, 30, 15]); } catch {}
-    return toast('That is tomorrow.');
+    return toast(t('That is tomorrow.'));
   }
 
   track('day_nav', { dir: 1, source });
@@ -1410,7 +1434,7 @@ $('entries').addEventListener('click', async (ev) => {
         body: JSON.stringify({ day: state.day })
       });
       track('entry_duplicated', { source: 'list' });
-      toast(`Logged another: ${foodName}`);
+      toast(t('Logged another: {0}', foodName));
       return loadDay();
     } catch (err) {
       toast(err.message || 'Failed to duplicate');
@@ -1424,7 +1448,7 @@ $('entries').addEventListener('click', async (ev) => {
     if (!confirm('Delete this entry?')) return;
     await api(`/api/entries/${encodeURIComponent(deleteId)}`, { method: 'DELETE' });
     track('entry_deleted');
-    toast('Deleted');
+    toast(t('Deleted'));
     return loadDay();
   }
 
@@ -1439,7 +1463,7 @@ const W = 320, PAD_L = 30, PAD_R = 8;
 
 const dayLabel = (iso) => {
   const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return new Date(y, m - 1, d).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
 };
 
 /** Evenly spaced date ticks that always include the first and last day. */
@@ -1583,10 +1607,10 @@ function renderIntakeChart(days, expenditure) {
   </svg>`;
 
   $('chart-legend').innerHTML =
-    `<span><i style="background:var(--protein)"></i>Protein</span>`
-    + `<span><i style="background:var(--carbs)"></i>Carbs</span>`
-    + `<span><i style="background:var(--fat)"></i>Fat</span>`
-    + (burn ? `<span><i class="dash"></i>What you burn</span>` : '');
+    `<span><i style="background:var(--protein)"></i>${esc(t('Protein'))}</span>`
+    + `<span><i style="background:var(--carbs)"></i>${esc(t('Carbs'))}</span>`
+    + `<span><i style="background:var(--fat)"></i>${esc(t('Fat'))}</span>`
+    + (burn ? `<span><i class="dash"></i>${esc(t('What you burn'))}</span>` : '');
 }
 
 let trendsRange = 30;
@@ -1597,22 +1621,27 @@ async function loadTrends() {
     renderWeightChart2(h.days, h.weightTrend);
     renderIntakeChart(h.days, h.expenditure);
 
-    const t = h.weightTrend;
+    // Renamed from `t`: that name now belongs to the translator.
+    const wt = h.weightTrend;
     const weighed = h.days.filter((d) => d.weight !== null).length;
-    if (t) {
-      $('trend-weight').textContent =
-        `${t.readings} weigh-ins over ${Math.round(t.spanDays)} days — `
-        + `${t.slopeKgPerWeek < 0 ? 'down' : 'up'} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg a week.`;
+    if (wt) {
+      // One sentence, one key. Romanian puts the direction before the rate,
+      // so a translator needs the whole clause rather than an English stub
+      // with a number glued on the end.
+      $('trend-weight').textContent = wt.slopeKgPerWeek < 0
+        ? t('{0} weigh-ins over {1} days — down {2} kg a week.',
+            wt.readings, Math.round(wt.spanDays), Math.abs(wt.slopeKgPerWeek).toFixed(2))
+        : t('{0} weigh-ins over {1} days — up {2} kg a week.',
+            wt.readings, Math.round(wt.spanDays), Math.abs(wt.slopeKgPerWeek).toFixed(2));
     } else if (!weighed) {
-      $('trend-weight').textContent = 'A trend needs 3 weigh-ins spread over a week.';
+      $('trend-weight').textContent = t('A trend needs 3 weigh-ins spread over a week.');
     } else {
       // Say what is there and what is still wanted, rather than only the rule.
       const left = Math.max(0, 3 - weighed);
-      $('trend-weight').textContent =
-        `${weighed} weigh-in${weighed === 1 ? '' : 's'} so far. `
-        + (left
-          ? `${left} more, spread over a week, and a trend line appears.`
-          : 'Spread over a week, and a trend line appears.');
+      $('trend-weight').textContent = left
+        ? plural('{0} weigh-ins so far. {1} more, spread over a week, and a trend line appears.',
+                 weighed, left)
+        : plural('{0} weigh-ins so far. Spread over a week, and a trend line appears.', weighed);
     }
 
     const logged = h.days.filter((d) => d.calories !== null);
@@ -1775,11 +1804,12 @@ function renderWeigh(day, weight, expenditure) {
   el.hidden = false;
 
   if (weight?.today !== null && weight?.today !== undefined) {
-    const t = weight.trend;
+    // Renamed from `t`: that name now belongs to the translator.
+    const wt = weight.trend;
     let sub = '';
-    if (t) {
-      const dir = t.slopeKgPerWeek < 0 ? 'down' : 'up';
-      sub = `${dir} ${Math.abs(t.slopeKgPerWeek).toFixed(2)} kg/wk`;
+    if (wt) {
+      const rate = Math.abs(wt.slopeKgPerWeek).toFixed(2);
+      sub = wt.slopeKgPerWeek < 0 ? t('down {0} kg/wk', rate) : t('up {0} kg/wk', rate);
     } else {
       sub = trendWanted(weight.gap);
     }
@@ -1799,9 +1829,9 @@ function renderWeigh(day, weight, expenditure) {
     const p = expenditure?.method !== 'measured' ? expenditure?.progress : null;
     const left = p && p.weighings < p.neededWeighings ? p.neededWeighings - p.weighings : 0;
     const sub = left
-      ? `${left} more to measure`
-      : 'keeps estimate honest';
-    const title = isToday ? 'Weigh in' : 'No weight';
+      ? plural('{0} more to measure', left)
+      : t('keeps estimate honest');
+    const title = isToday ? t('Weigh in') : t('No weight');
     el.innerHTML = `
       <div class="weigh-pill-wrap">
         <button class="weigh-row weigh-pill" type="button" id="weigh-open">
@@ -1815,7 +1845,7 @@ function renderWeigh(day, weight, expenditure) {
           <span class="chev" aria-hidden="true">&rsaquo;</span>
         </button>
         ${isToday ? `<button class="weigh-dismiss" type="button" id="weigh-skip"
-                aria-label="Not today">&times;</button>` : ''}
+                aria-label="${esc(t('Not today'))}">&times;</button>` : ''}
       </div>`;
     track('weigh_prompt_shown', { today: isToday });
     if (isToday) {
@@ -1846,8 +1876,8 @@ function openWeighEditor(day, weight) {
   el.innerHTML = `
     <div class="weigh-edit">
       <div class="weigh-stepper">
-        <button class="step" type="button" id="w-down" aria-label="Lower by 100 grams">&minus;</button>
-        <label class="sr-only" for="w-value">Weight in kilograms</label>
+        <button class="step" type="button" id="w-down" aria-label="${esc(t('Lower by 100 grams'))}">&minus;</button>
+        <label class="sr-only" for="w-value">${esc(t('Weight in kilograms'))}</label>
         <span class="weigh-field">
           <input id="w-value" type="number" inputmode="decimal" step="0.1" min="20" max="400"
                  value="${roundKg(start).toFixed(1)}">
@@ -1856,10 +1886,10 @@ function openWeighEditor(day, weight) {
         <button class="step" type="button" id="w-up" aria-label="Raise by 100 grams">+</button>
       </div>
       <div class="weigh-actions">
-        <button class="primary" type="button" id="w-commit">Save</button>
-        <button class="secondary" type="button" id="w-cancel">Cancel</button>
+        <button class="primary" type="button" id="w-commit">${esc(t('Save'))}</button>
+        <button class="secondary" type="button" id="w-cancel">${esc(t('Cancel'))}</button>
       </div>
-      <p class="weigh-why">Starts from your last reading — nudge it rather than typing.</p>
+      <p class="weigh-why">${esc(t('Starts from your last reading — nudge it rather than typing.'))}</p>
     </div>`;
 
   const field = $('w-value');
@@ -1873,7 +1903,7 @@ function openWeighEditor(day, weight) {
 
   $('w-commit').addEventListener('click', async () => {
     const kg = Number(String(field.value).replace(',', '.'));
-    if (!Number.isFinite(kg) || kg < 20 || kg > 400) return toast('That weight looks wrong.');
+    if (!Number.isFinite(kg) || kg < 20 || kg > 400) return toast(t('That weight looks wrong.'));
     $('w-commit').disabled = true;
     try {
       await api('/api/weights', {
@@ -1882,7 +1912,7 @@ function openWeighEditor(day, weight) {
       });
       track('weigh_saved', { backfill: day !== localDayKey() });
       if (day !== localDayKey()) track('weigh_backfill');
-      toast('Weight logged');
+      toast(t('Weight logged'));
       await loadDay();
     } catch (err) {
       $('w-commit').disabled = false;
@@ -2038,22 +2068,22 @@ function offerPhotoDay(takenOn) {
   // pointed at a plate will not make you check.
   if (state.day !== today && photoDay !== state.day) {
     const viewing = dayTitle(state.day);
-    note.innerHTML = `<span>Logging to <strong>${esc(viewing)}</strong>, not today.</span>
-      <button type="button" class="link-btn" id="photo-day-today">Use today</button>`;
+    note.innerHTML = t('<span>Logging to <strong>{0}</strong>, not today.</span>', esc(viewing))
+      + `<button type="button" class="link-btn" id="photo-day-today">${esc(t('Use today'))}</button>`;
     note.hidden = false;
     $('photo-day-today').addEventListener('click', () => {
       state.photoDay = today;
       note.hidden = true;
-      toast('This entry will be logged to today');
+      toast(t('This entry will be logged to today'));
     });
     return;
   }
 
   if (photoDay === null || photoDay === state.day) return;
 
-  const label = takenOn.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
-  note.innerHTML = `<span>Taken ${esc(label)}.</span>
-    <button type="button" class="link-btn" id="photo-day-move">Log it there instead</button>`;
+  const label = takenOn.toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'short' });
+  note.innerHTML = t('<span>Taken {0}.</span>', esc(label))
+    + `<button type="button" class="link-btn" id="photo-day-move">${esc(t('Log it there instead'))}</button>`;
   note.hidden = false;
   $('photo-day-move').addEventListener('click', () => {
     // On the entry, not on the app. Setting state.day moved the whole day
@@ -2063,7 +2093,7 @@ function offerPhotoDay(takenOn) {
     // week back and the screen showed an empty today.
     state.photoDay = photoDay;
     note.hidden = true;
-    toast(`This entry will be logged to ${label}`);
+    toast(t('This entry will be logged to {0}', label));
   });
 }
 
@@ -2149,7 +2179,7 @@ function openReview(mode, entry = null) {
   state.openedAs = entry ? snapshotEstimate() : null;
   state.photoDay = null;
 
-  $('review-heading').textContent = SHEET_TITLES[mode];
+  $('review-heading').textContent = t(SHEET_TITLES[mode]);
   $('save-entry').textContent = mode === 'edit' ? 'Save changes' : 'Save';
   const dupBtn = $('dup-entry');
   if (dupBtn) {
@@ -2352,7 +2382,7 @@ function renderReview() {
       weighed: ' \u2014 from a weighed portion'
     }[source];
     $('review-range').textContent =
-      `Likely ${ranges.calories.low}\u2013${ranges.calories.high} kcal${tail}`;
+      t('Likely {0}–{1} kcal{2}', ranges.calories.low, ranges.calories.high, tail);
 
     $('weighed').checked = source === 'weighed';
     // Stated plainly, because the measurement does not support "always
@@ -2444,13 +2474,15 @@ const ATE_WORDS = new Map([[0, 'none of it'], [0.25, 'a quarter'], [0.5, 'half']
 const ATE_SHORT = new Map([[0, 'none'], [0.25, '\u00bc'], [0.5, '\u00bd'],
                            [0.75, '\u00be'], [1, 'all']]);
 
+// Looked up then translated, rather than translated into the map: the maps are
+// built once at load, and the language can change after that.
 function ateWords(f) {
-  if (ATE_WORDS.has(f)) return ATE_WORDS.get(f);
+  if (ATE_WORDS.has(f)) return t(ATE_WORDS.get(f));
   return `${Math.round(f * 100)}%`;
 }
 
 function ateShort(f) {
-  if (ATE_SHORT.has(f)) return ATE_SHORT.get(f);
+  if (ATE_SHORT.has(f)) return t(ATE_SHORT.get(f));
   return `${Math.round(f * 100)}%`;
 }
 
@@ -2499,7 +2531,7 @@ $('file-leftovers')?.addEventListener('change', async (ev) => {
   const btn = $('leftovers-shoot');
   const was = btn.textContent;
   btn.disabled = true;
-  btn.textContent = 'Reading what is left…';
+  btn.textContent = t('Reading what is left…');
   try {
     const { base64 } = await prepareImage(file);
     const out = await api(`/api/entries/${state.editingId}/leftovers`, {
@@ -2702,7 +2734,7 @@ async function showRecent() {
       hasImage: Boolean(f.barcode),
       uses: f.uses
     })));
-    $('finder-hint').textContent = 'Recently logged — tap to add again.';
+    $('finder-hint').textContent = t('Recently logged — tap to add again.');
   } catch {
     // A failed recents fetch is not worth a message: the search box works.
   }
@@ -2712,7 +2744,7 @@ async function runSearch(query) {
   // Every response carries the sequence number of the request that asked for
   // it, so a slow early reply cannot overwrite a fast later one.
   const seq = ++searchSeq;
-  $('finder-hint').textContent = 'Searching…';
+  $('finder-hint').textContent = t('Searching…');
 
   try {
     const data = await api(`/api/foods/search?q=${encodeURIComponent(query)}`);
@@ -2788,7 +2820,7 @@ function addFood(food) {
   renderReview();
 
   const added = state.estimate.items[state.estimate.items.length - 1];
-  toast(`Added ${food.name} at ${added.grams} g — adjust below`);
+  toast(t('Added {0} at {1} g — adjust below', food.name, added.grams));
 
   // Put the new row's weight field under the thumb straight away.
   const field = document.querySelector(`.item[data-id="${added.id}"] input`);
@@ -2837,14 +2869,14 @@ $('correct-toggle').addEventListener('click', () => {
  */
 $('correct-go').addEventListener('click', async () => {
   const correction = $('correct-text').value.trim();
-  if (!correction) return toast('Say what it is first.');
+  if (!correction) return toast(t('Say what it is first.'));
 
   // Fresh capture sends the bytes it holds; a saved entry names itself and
   // lets the server read the photo it already has, so this works even on an
   // entry logged from a different phone.
   const live = !!state.photo?.base64;
   if (!live && !(state.editingId && state.existingPhotoId)) {
-    return toast('The photo is no longer available — take another.');
+    return toast(t('The photo is no longer available — take another.'));
   }
 
   $('correct-go').disabled = true;
@@ -2878,7 +2910,7 @@ $('correct-go').addEventListener('click', async () => {
     $('correct-text').value = '';
     initWeightSlider();
     renderReview();
-    toast('Read again');
+    toast(t('Read again'));
   } catch (err) {
     track('correct_fail', { code: err.code || 'unknown' });
     failed(err.message);
@@ -2948,8 +2980,7 @@ function checkManual() {
   if (!parsed) { warn.hidden = true; return null; }
 
   if (!isPlausible(parsed.per100)) {
-    warn.textContent = 'Those numbers are not physically possible for 100 g of food — check '
-      + 'whether they are per portion or per 100 g.';
+    warn.textContent = t('Those numbers are not physically possible for 100 g of food — check whether they are per portion or per 100 g.');
     warn.hidden = false;
     return null;
   }
@@ -2970,9 +3001,9 @@ function checkManual() {
       (parsed.per100.protein * 4 + parsed.per100.carbs * 4 + parsed.per100.fat * 9)
       * parsed.grams / 100);
     track('manual_warned', { gap: Math.round(disagreement * 100) });
-    warn.textContent = `The macros add up to about ${implied} kcal, not `
-      + `${Math.round(parsed.per100.calories * parsed.grams / 100)}. Printed panels are often out — `
-      + 'worth a second look. The calories you entered are what will be used.';
+    warn.textContent = t(
+      'The macros add up to about {0} kcal, not {1}. Printed panels are often out — worth a second look. The calories you entered are what will be used.',
+      implied, Math.round(parsed.per100.calories * parsed.grams / 100));
     warn.hidden = false;
   } else {
     warn.hidden = true;
@@ -2986,8 +3017,8 @@ for (const id of ['m-grams', 'm-kcal', 'm-protein', 'm-fat', 'm-carbs', 'm-fiber
 
 $('m-add').addEventListener('click', () => {
   const parsed = checkManual();
-  if (!parsed) return toast('Enter at least a weight and the calories.');
-  if (!parsed.name) return toast('Give it a name.');
+  if (!parsed) return toast(t('Enter at least a weight and the calories.'));
+  if (!parsed.name) return toast(t('Give it a name.'));
 
   // source stays 'manual', so no photo-error band is applied to it.
   state.estimate = addManualItem(
@@ -3002,11 +3033,11 @@ $('m-add').addEventListener('click', () => {
 
   renderReview();
   track('manual_add');
-  toast(`Added ${parsed.name}`);
+  toast(t('Added {0}', parsed.name));
 });
 
 async function lookupBarcode(code) {
-  $('finder-hint').textContent = 'Looking up…';
+  $('finder-hint').textContent = t('Looking up…');
   try {
     const { food } = await api(`/api/foods/barcode/${encodeURIComponent(code)}`);
     $('finder-hint').textContent = '';
@@ -3051,8 +3082,8 @@ async function startScan() {
   wrap.innerHTML = `
     <video class="scanner" playsinline></video>
     <div class="scan-ui">
-      <p class="scan-title">Point at the barcode</p>
-      <div class="scan-window" role="img" aria-label="Barcode viewfinder">
+      <p class="scan-title">${esc(t('Point at the barcode'))}</p>
+      <div class="scan-window" role="img" aria-label="${esc(t('Barcode viewfinder'))}">
         <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
         <div class="scan-line"></div>
       </div>
@@ -3102,8 +3133,7 @@ async function startScan() {
   // with no feedback reads as a broken app rather than a difficult barcode.
   const nudge = setTimeout(() => {
     const hint = wrap.querySelector('#scan-hint');
-    if (hint) hint.textContent = 'Still looking — try more light, or move closer so the '
-      + 'barcode fills the frame.';
+    if (hint) hint.textContent = t('Still looking — try more light, or move closer so the barcode fills the frame.');
   }, 6000);
 
   const deadline = Date.now() + 25000;
@@ -3114,7 +3144,7 @@ async function startScan() {
       track('scan_fail', { seconds: (Date.now() - scanAt) / 1000 });
       stop();
       $('finder-hint').textContent =
-        'No barcode found. Try again, or use the barcode button here to type the number.';
+        t('No barcode found. Try again, or use the barcode button here to type the number.');
       return;
     }
     try {
@@ -3258,7 +3288,7 @@ $('dup-entry')?.addEventListener('click', async () => {
     track('entry_duplicated', { source: 'sheet' });
     idle();
     closeReview();
-    toast('Logged another');
+    toast(t('Logged another'));
     await loadDay();
   } catch (err) {
     failed(err.message || 'Failed to duplicate');
@@ -3274,15 +3304,15 @@ $('dup-entry')?.addEventListener('click', async () => {
 function fillProfile() {
   const p = state.me?.profile;
   $('p-activity').innerHTML = (state.me?.activityLevels || [])
-    .map((l) => `<option value="${esc(l.id)}">${esc(l.label)}</option>`).join('');
+    .map((l) => `<option value="${esc(l.id)}">${esc(t(l.label))}</option>`).join('');
 
   if ($('p-diet') && state.me?.diets) {
     $('p-diet').innerHTML = state.me.diets
-      .map((d) => `<option value="${esc(d.id)}">${esc(d.label)}</option>`).join('');
+      .map((d) => `<option value="${esc(d.id)}">${esc(t(d.label))}</option>`).join('');
   }
   if ($('p-goal') && state.me?.dietaryGoals) {
     $('p-goal').innerHTML = state.me.dietaryGoals
-      .map((g) => `<option value="${esc(g.id)}">${esc(g.label)}</option>`).join('');
+      .map((g) => `<option value="${esc(g.id)}">${esc(t(g.label))}</option>`).join('');
   }
 
   // Ahead of the early return: someone with no profile at all is exactly who
@@ -3315,10 +3345,49 @@ function showMaintenanceResult(m, usedKg) {
     return;
   }
   el.className = 'maintenance';
-  el.innerHTML = `You burn roughly <b>${m.kcal} kcal</b> on an average day
-    &mdash; most likely between <b>${m.low}</b> and <b>${m.high}</b>.
-    ${usedKg ? `Worked out from your latest weigh-in, <b>${Number(usedKg).toFixed(1)} kg</b>. ` : ''}
-    This is an estimate from a population formula, not a measurement.`;
+  el.innerHTML =
+    t('You burn roughly <b>{0} kcal</b> on an average day — most likely between <b>{1}</b> and <b>{2}</b>.',
+      m.kcal, m.low, m.high)
+    + ' '
+    + (usedKg
+        ? t('Worked out from your latest weigh-in, <b>{0} kg</b>.', Number(usedKg).toFixed(1)) + ' '
+        : '')
+    + t('This is an estimate from a population formula, not a measurement.');
+}
+
+/**
+ * The language switcher.
+ *
+ * Switching re-renders in place rather than reloading: a reload would drop the
+ * sheet you are standing in, and the whole interface is either static markup
+ * (retranslated by applyToDom) or redrawn from state by the renderers called
+ * below. Anything left on screen from before is regenerated by loadDay().
+ */
+function renderLanguageChoice() {
+  const host = $('language-choice');
+  if (!host) return;
+
+  host.innerHTML = LOCALES.map((code) => `
+    <button class="chip" type="button" data-locale="${esc(code)}"
+            aria-pressed="${code === locale()}">${esc(LOCALE_NAMES[code])}</button>`).join('');
+
+  host.querySelectorAll('[data-locale]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const next = btn.dataset.locale;
+      if (next === locale()) return;
+      await setLocale(next);
+      track('language_changed', { locale: next });
+      applyToDom();
+      renderLanguageChoice();
+      // The parts drawn from state, not from markup.
+      setGateMode(gateMode);
+      renderRecoveryState();
+      loadDevices();
+      if (state.me) fillProfile();
+      cycleBiteyMessage();
+      loadDay().catch(() => {});
+    });
+  });
 }
 
 const closeProfile = () => dismissScreen('profile');
@@ -3371,7 +3440,7 @@ $('profile-form').addEventListener('submit', async (ev) => {
     state.me.maintenance = data.maintenance;
     state.me.weightUsedKg = data.weightUsedKg;
     showMaintenanceResult(data.maintenance, data.weightUsedKg);
-    toast('Saved');
+    toast(t('Saved'));
     await loadDay();
   } catch (e) {
     err.textContent = e.status === 400 && e.code === 'out_of_range'
@@ -3436,34 +3505,42 @@ function renderExpenditure(exp) {
   if (exp.method !== 'measured') {
     const p = exp.progress || {};
     const parts = [];
-    const plural = (n, one, many) => `${n} more ${n === 1 ? one : many}`;
-    if (p.loggedDays < p.neededDays) parts.push(plural(p.neededDays - p.loggedDays, 'day logged', 'days logged'));
-    if (p.weighings < p.neededWeighings) parts.push(plural(p.neededWeighings - p.weighings, 'weigh-in', 'weigh-ins'));
+    // Was a local `plural` picking between two English forms. Romanian has
+    // three, and the boundary is not a comparison against 1, so the catalogue
+    // supplies the forms and Intl chooses.
+    if (p.loggedDays < p.neededDays) {
+      parts.push(plural('{0} more days logged', p.neededDays - p.loggedDays));
+    }
+    if (p.weighings < p.neededWeighings) {
+      parts.push(plural('{0} more weigh-ins', p.neededWeighings - p.weighings));
+    }
 
     el.innerHTML = `
       <div class="big">${exp.available ? `${exp.kcal} kcal` : '&mdash;'}
-        <span class="method formula">formula</span></div>
-      <p class="progress">${exp.available
-        ? 'From your height, weight, age and activity — a population average, not you.'
-        : 'Fill in your details above for a first estimate.'}</p>
-      <p class="progress">${parts.length
-        ? `Needs ${parts.join(' and ')}. Then it becomes a measurement of what you actually burn,
-           rather than an average of people your size.`
-        : 'Keep logging and weighing — this becomes a measurement once there is enough.'}</p>`;
+        <span class="method formula">${esc(t('formula'))}</span></div>
+      <p class="progress">${esc(exp.available
+        ? t('From your height, weight, age and activity — a population average, not you.')
+        : t('Fill in your details above for a first estimate.'))}</p>
+      <p class="progress">${esc(parts.length
+        ? t('Needs {0}. Then it becomes a measurement of what you actually burn, rather than an average of people your size.',
+            parts.join(t(' and ')))
+        : t('Keep logging and weighing — this becomes a measurement once there is enough.'))}</p>`;
     return;
   }
 
   const b = exp.basis;
-  const dir = b.slopeKgPerWeek < 0 ? 'losing' : 'gaining';
+  const rate = Math.abs(b.slopeKgPerWeek).toFixed(2);
+  const movement = b.slopeKgPerWeek < 0
+    ? t('losing {0} kg/week', rate)
+    : t('gaining {0} kg/week', rate);
   el.innerHTML = `
-    <div class="big">${exp.kcal} kcal <span class="method measured">measured</span></div>
-    <p class="progress">Likely ${exp.low}&ndash;${exp.high}. Worked out from what you ate and how
-      your weight moved, not from a formula.</p>
+    <div class="big">${exp.kcal} kcal <span class="method measured">${esc(t('measured'))}</span></div>
+    <p class="progress">${esc(t('Likely {0}–{1}. Worked out from what you ate and how your weight moved, not from a formula.', exp.low, exp.high))}</p>
     <dl>
-      <dt>Weight</dt><dd>${dir} ${Math.abs(b.slopeKgPerWeek).toFixed(2)} kg/week</dd>
-      <dt>You ate</dt><dd>${b.meanIntake} kcal/day on ${b.loggedDays} days</dd>
-      <dt>Weigh-ins</dt><dd>${b.weighings} over ${Math.round(b.weightSpanDays)} days</dd>
-      ${exp.formula?.kcal ? `<dt>Formula says</dt><dd>${exp.formula.kcal} kcal</dd>` : ''}
+      <dt>${esc(t('Weight'))}</dt><dd>${esc(movement)}</dd>
+      <dt>${esc(t('You ate'))}</dt><dd>${esc(t('{0} kcal/day on {1} days', b.meanIntake, b.loggedDays))}</dd>
+      <dt>${esc(t('Weigh-ins'))}</dt><dd>${esc(t('{0} over {1} days', b.weighings, Math.round(b.weightSpanDays)))}</dd>
+      ${exp.formula?.kcal ? `<dt>${esc(t('Formula says'))}</dt><dd>${exp.formula.kcal} kcal</dd>` : ''}
     </dl>`;
 }
 
@@ -3478,12 +3555,13 @@ async function loadWeight() {
     renderExpenditure(exp);
 
     if (trend) {
-      const dir = trend.slopeKgPerWeek < 0 ? 'down' : 'up';
-      $('weight-trend').textContent =
-        `${trend.readings} weigh-ins over ${Math.round(trend.spanDays)} days — trending ${dir} `
-        + `${Math.abs(trend.slopeKgPerWeek).toFixed(2)} kg a week.`;
+      $('weight-trend').textContent = trend.slopeKgPerWeek < 0
+        ? t('{0} weigh-ins over {1} days — trending down {2} kg a week.',
+            trend.readings, Math.round(trend.spanDays), Math.abs(trend.slopeKgPerWeek).toFixed(2))
+        : t('{0} weigh-ins over {1} days — trending up {2} kg a week.',
+            trend.readings, Math.round(trend.spanDays), Math.abs(trend.slopeKgPerWeek).toFixed(2));
     } else {
-      $('weight-trend').textContent = 'A trend needs at least 3 weigh-ins spread over a week.';
+      $('weight-trend').textContent = t('A trend needs at least 3 weigh-ins spread over a week.');
     }
     if (weights.length) {
       $('w-kg').placeholder = `Last: ${weights[weights.length - 1].kg} kg`;
@@ -3498,14 +3576,14 @@ async function loadWeight() {
 
 $('w-save').addEventListener('click', async () => {
   const kg = Number(String($('w-kg').value).replace(',', '.'));
-  if (!Number.isFinite(kg) || kg <= 0) return toast('Enter a weight first.');
+  if (!Number.isFinite(kg) || kg <= 0) return toast(t('Enter a weight first.'));
   try {
     await api('/api/weights', {
       method: 'PUT',
       body: JSON.stringify({ day: localDayKey(), kg, at: new Date().toISOString() })
     });
     $('w-kg').value = '';
-    toast('Weight logged');
+    toast(t('Weight logged'));
     await loadWeight();
     await loadDay();
   } catch (err) {
@@ -3525,13 +3603,13 @@ function showCode(title, code, hint, warn = false) {
 }
 
 function relativeTime(iso) {
-  if (!iso) return 'never';
+  if (!iso) return t('never');
   const mins = (Date.now() - Date.parse(iso)) / 60000;
-  if (!Number.isFinite(mins)) return 'unknown';
-  if (mins < 2) return 'just now';
-  if (mins < 60) return `${Math.round(mins)} min ago`;
-  if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`;
-  return `${Math.round(mins / 1440)} d ago`;
+  if (!Number.isFinite(mins)) return t('unknown');
+  if (mins < 2) return t('just now');
+  if (mins < 60) return t('{0} min ago', Math.round(mins));
+  if (mins < 60 * 24) return t('{0} h ago', Math.round(mins / 60));
+  return t('{0} d ago', Math.round(mins / 1440));
 }
 
 async function loadDevices() {
@@ -3539,11 +3617,11 @@ async function loadDevices() {
     const { devices } = await api('/api/devices');
     $('device-list').innerHTML = devices.map((d) => `
       <li class="device" data-id="${esc(d.id)}">
-        <span class="device-name">${esc(d.label || 'Unnamed device')}${
-          d.current ? '<span class="device-this">this one</span>' : ''}</span>
-        <span class="device-meta">last used ${esc(relativeTime(d.lastSeen))}</span>
+        <span class="device-name">${esc(d.label || t('Unnamed device'))}${
+          d.current ? `<span class="device-this">${esc(t('this one'))}</span>` : ''}</span>
+        <span class="device-meta">${esc(t('last used {0}', relativeTime(d.lastSeen)))}</span>
         ${d.current ? '<span></span>'
-          : `<button class="device-revoke" type="button" data-revoke="${esc(d.id)}">Remove</button>`}
+          : `<button class="device-revoke" type="button" data-revoke="${esc(d.id)}">${esc(t('Remove'))}</button>`}
       </li>`).join('');
   } catch {
     $('device-list').innerHTML = '';
@@ -3553,19 +3631,19 @@ async function loadDevices() {
 function renderRecoveryState() {
   const has = state.me?.hasRecoveryCode;
   $('recovery-state').textContent = has
-    ? 'A recovery code is set. Replacing it retires the old one.'
-    : 'No recovery code yet — if you lose this device, your log cannot be reached.';
+    ? t('A recovery code is set. Replacing it retires the old one.')
+    : t('No recovery code yet — if you lose this device, your log cannot be reached.');
   $('recovery-state').style.color = has ? '' : 'var(--warn)';
-  $('recovery-btn').textContent = has ? 'Replace recovery code' : 'Create a recovery code';
+  $('recovery-btn').textContent = has ? t('Replace recovery code') : t('Create a recovery code');
 }
 
 $('link-device').addEventListener('click', async () => {
   try {
     const { code, expiresInMs } = await api('/api/devices/link-code', { method: 'POST', body: '{}' });
-    showCode('Enter this on the other device',
+    showCode(t('Enter this on the other device'),
       code,
-      `Open Plate there, choose "Link a device", and type this in. It expires in `
-      + `${Math.round(expiresInMs / 60000)} minutes and works once.`);
+      plural('Open Plate there, choose "Link a device", and type this in. It expires in {0} minutes and works once.',
+             Math.round(expiresInMs / 60000)));
   } catch (err) {
     toast(err.message);
   }
@@ -3573,14 +3651,14 @@ $('link-device').addEventListener('click', async () => {
 
 $('recovery-btn').addEventListener('click', async () => {
   if (state.me?.hasRecoveryCode
-      && !confirm('Replace the recovery code? The old one stops working immediately.')) return;
+      && !confirm(t('Replace the recovery code? The old one stops working immediately.'))) return;
   try {
     const { recoveryCode } = await api('/api/devices/recovery-code', { method: 'POST', body: '{}' });
     state.me.hasRecoveryCode = true;
     renderRecoveryState();
-    showCode('Save this recovery code', recoveryCode,
-      'It is the only way back into your log if you lose every device. '
-      + 'It is stored hashed and cannot be shown again.', true);
+    showCode(t('Save this recovery code'), recoveryCode,
+      t('It is the only way back into your log if you lose every device. It is stored hashed and cannot be shown again.'),
+      true);
   } catch (err) {
     toast(err.message);
   }
@@ -3589,10 +3667,10 @@ $('recovery-btn').addEventListener('click', async () => {
 $('device-list').addEventListener('click', async (ev) => {
   const id = ev.target.closest('[data-revoke]')?.dataset.revoke;
   if (!id) return;
-  if (!confirm('Remove this device? Its access ends immediately. Your log is not affected.')) return;
+  if (!confirm(t('Remove this device? Its access ends immediately. Your log is not affected.'))) return;
   try {
     await api(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    toast('Device removed');
+    toast(t('Device removed'));
     loadDevices();
   } catch (err) {
     toast(err.message);
@@ -3641,7 +3719,7 @@ async function start() {
   state.me = await api('/api/me');
   // The server decides. Nothing is collected until it says so.
   startTracking(state.me.trackingEnabled);
-  if (!state.me.analysisConfigured) toast('Photo analysis is not configured on this server.');
+  if (!state.me.analysisConfigured) toast(t('Photo analysis is not configured on this server.'));
   await loadDay();
   await collectSharedPhoto();
   handleUrlActions();
@@ -3669,7 +3747,7 @@ async function collectSharedPhoto() {
   // Tidied immediately, so a reload is not a second share.
   history.replaceState(history.state, '', location.pathname);
   if (params.get('shared') !== '1') {
-    toast('That photo could not be read.');
+    toast(t('That photo could not be read.'));
     return;
   }
 
@@ -3684,7 +3762,7 @@ async function collectSharedPhoto() {
     const name = decodeURIComponent(res.headers.get('X-Shared-Name') || 'shared.jpg');
     await startPhotoEntry(new File([blob], name, { type: blob.type || 'image/jpeg' }));
   } catch (err) {
-    toast('That photo could not be read.');
+    toast(t('That photo could not be read.'));
   }
 }
 
@@ -3757,6 +3835,13 @@ function inviteFromUrl() {
 }
 
 (async () => {
+  // Before anything renders: a screen that paints English and then flips to
+  // Romanian a moment later looks broken, and the gate can appear before
+  // start() ever returns.
+  await loadLocale();
+  applyToDom();
+  renderLanguageChoice();
+
   const invited = inviteFromUrl();
   try {
     await start();
@@ -3764,7 +3849,7 @@ function inviteFromUrl() {
   } catch (err) {
     if (err.message !== 'not_registered') {
       showGate();
-      $('gate-error').textContent = 'Could not reach the server.';
+      $('gate-error').textContent = t('Could not reach the server.');
       $('gate-error').hidden = false;
       return;
     }
@@ -3773,7 +3858,7 @@ function inviteFromUrl() {
     if (invited) {
       setGateMode('invite');
       $('invite').value = invited;
-      $('gate-hint').textContent = 'Code filled in from your link — press Continue.';
+      $('gate-hint').textContent = t('Code filled in from your link — press Continue.');
     }
   }
 })();
@@ -3818,7 +3903,7 @@ document.addEventListener('visibilitychange', () => {
   if (awayMs > 20 * 60 * 1000 && state.day !== today) {
     const left = dayTitle(state.day);
     state.day = today;
-    loadDay().then(() => toast(`Back to today — you were looking at ${left}`)).catch(() => {});
+    loadDay().then(() => toast(t('Back to today — you were looking at {0}', left))).catch(() => {});
     return;
   }
 

@@ -7,13 +7,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, nowIso, PRODUCT_DIR } from './db.js';
+import { db, nowIso, PRODUCT_DIR, addColumnIfMissing } from './db.js';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { fromOpenFoodFacts, rankResults, tokenise } from '../core/foods.js';
 
 const UA = 'Plate/0.1 (self-hosted personal food log)';
-const OFF_FIELDS = 'code,product_name,brands,quantity,serving_size,nutriments,'
+// product_name_ro is requested alongside the generic name rather than instead
+// of it: most imported products have only the generic one.
+const OFF_FIELDS = 'code,product_name,product_name_ro,brands,quantity,serving_size,nutriments,'
   + 'image_front_small_url,image_small_url';
 
 /** Bounded on purpose: this is a thumbnail, and the URL comes from a third party. */
@@ -66,6 +68,12 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_food_barcode ON food_cache(barcode);
 `);
 
+// The cached name is in whatever language it was fetched in, so the language
+// is part of what identifies the row. Without it, a barcode first scanned in
+// English kept serving its English name to a Romanian reader until the entry
+// went stale on its own.
+addColumnIfMissing('food_cache', 'locale', "TEXT NOT NULL DEFAULT 'en'");
+
 export class LookupError extends Error {
   constructor(code, message, status = 502) {
     super(message);
@@ -74,16 +82,17 @@ export class LookupError extends Error {
   }
 }
 
-function cache(food) {
+function cache(food, locale = 'en') {
   if (!food) return food;
   db.prepare(`
-    INSERT INTO food_cache (id, barcode, name, source, per100_json, serving_g, fetched_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO food_cache (id, barcode, name, source, per100_json, serving_g, fetched_at, locale)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name, per100_json = excluded.per100_json,
-      serving_g = excluded.serving_g, fetched_at = excluded.fetched_at
+      serving_g = excluded.serving_g, fetched_at = excluded.fetched_at,
+      locale = excluded.locale
   `).run(food.id, food.barcode, food.name, food.source,
-    JSON.stringify(food.per100), food.servingG, nowIso());
+    JSON.stringify(food.per100), food.servingG, nowIso(), locale);
   return food;
 }
 
@@ -98,9 +107,10 @@ function cache(food) {
  */
 const CACHE_TTL_DAYS = 90;
 
-function cachedBarcode(code) {
-  const row = db.prepare('SELECT * FROM food_cache WHERE barcode = ? ORDER BY fetched_at DESC LIMIT 1')
-    .get(code);
+function cachedBarcode(code, locale = 'en') {
+  const row = db.prepare(
+    'SELECT * FROM food_cache WHERE barcode = ? AND locale = ? ORDER BY fetched_at DESC LIMIT 1')
+    .get(code, locale);
   if (!row) return null;
 
   const fetchedAt = Date.parse(row.fetched_at);
@@ -142,13 +152,13 @@ async function getJson(url, timeoutMs = 12000) {
  * few products get scanned over and over, and a barcode's nutrition does not
  * change between scans.
  */
-export async function lookupBarcode(rawCode) {
+export async function lookupBarcode(rawCode, locale = 'en') {
   const code = String(rawCode || '').replace(/\D/g, '');
   if (code.length < 6 || code.length > 14) {
     throw new LookupError('bad_barcode', 'That does not look like a barcode.', 400);
   }
 
-  const hit = cachedBarcode(code);
+  const hit = cachedBarcode(code, locale);
   if (hit && !hit.stale) return hit;
 
   let json;
@@ -170,7 +180,10 @@ export async function lookupBarcode(rawCode) {
     throw new LookupError('not_found', 'That barcode is not in the database yet.', 404);
   }
 
-  const food = fromOpenFoodFacts({ ...json.product, code });
+  const food = fromOpenFoodFacts({ ...json.product, code }, locale);
+  // The row id carries the language too, or ON CONFLICT(id) would have one
+  // language overwrite the other on every alternating lookup.
+  if (food && locale !== 'en') food.id = `${food.id}:${locale}`;
   if (food?.imageUrl) await cacheProductImage(code, food.imageUrl);
   if (!food && hit) return { ...hit, refreshFailed: true };
   if (!food) {
@@ -180,15 +193,15 @@ export async function lookupBarcode(rawCode) {
     throw new LookupError('no_nutrition',
       'That product is listed but has no nutrition information. Add it by hand.', 422);
   }
-  return { ...cache(food), hasImage: hasProductImage(code) };
+  return { ...cache(food, locale), hasImage: hasProductImage(code) };
 }
 
-async function searchOpenFoodFacts(query) {
+async function searchOpenFoodFacts(query, locale = 'en') {
   const url = 'https://world.openfoodfacts.org/cgi/search.pl'
     + `?search_terms=${encodeURIComponent(query)}`
     + `&search_simple=1&action=process&json=1&page_size=12&fields=${OFF_FIELDS}`;
   const json = await getJson(url);
-  return (json?.products || []).map(fromOpenFoodFacts).filter(Boolean);
+  return (json?.products || []).map((p) => fromOpenFoodFacts(p, locale)).filter(Boolean);
 }
 
 /**
@@ -254,7 +267,7 @@ export function usdaConfigured() {
   return genericSearchAvailable();
 }
 
-export async function searchFoods(rawQuery) {
+export async function searchFoods(rawQuery, locale = 'en') {
   const query = String(rawQuery || '').trim().slice(0, 80);
   if (query.length < 2) {
     throw new LookupError('short_query', 'Type at least two characters.', 400);
@@ -262,7 +275,7 @@ export async function searchFoods(rawQuery) {
 
   // The local table cannot fail or be slow, so it is not raced with anything.
   const local = searchGeneric(query);
-  const off = await Promise.allSettled([searchOpenFoodFacts(query)]).then((r) => r[0]);
+  const off = await Promise.allSettled([searchOpenFoodFacts(query, locale)]).then((r) => r[0]);
 
   const results = [
     ...local,

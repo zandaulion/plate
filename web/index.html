@@ -15,11 +15,11 @@
 <div id="gate" class="screen gate" hidden>
   <div class="gate-inner">
     <h1 class="brand">Plate</h1>
-    <p class="gate-lead">Photograph a meal, correct the portion, log it.</p>
+    <p class="gate-lead" data-i18n="Photograph a meal, correct the portion, log it.">Photograph a meal, correct the portion, log it.</p>
     <div class="chips gate-modes" role="tablist">
-      <button class="chip" type="button" data-gate="invite" aria-pressed="true">Invite</button>
-      <button class="chip" type="button" data-gate="link" aria-pressed="false">Link a device</button>
-      <button class="chip" type="button" data-gate="recover" aria-pressed="false">Recovery code</button>
+      <button class="chip" type="button" data-gate="invite" aria-pressed="true" data-i18n="Invite">Invite</button>
+      <button class="chip" type="button" data-gate="link" aria-pressed="false" data-i18n="Link a device">Link a device</button>
+      <button class="chip" type="button" data-gate="recover" aria-pressed="false" data-i18n="Recovery code">Recovery code</button>
     </div>
 
     <form id="redeem-form" class="stack">
@@ -27,7 +27,7 @@
       <input id="invite" name="invite" autocomplete="one-time-code" spellcheck="false"
              placeholder="ABCDE-FGHJK" required>
       <p class="hint" id="gate-hint">The code you were sent.</p>
-      <button class="primary" type="submit">Continue</button>
+      <button class="primary" type="submit" data-i18n="Continue">Continue</button>
       <p id="gate-error" class="error" role="alert" hidden></p>
     </form>
   </div>
@@ -36,22 +36,22 @@
 <div id="app" class="screen" hidden>
 
   <header class="topbar">
-    <button id="prev-day" class="icon-btn" aria-label="Previous day">&#8249;</button>
+    <button id="prev-day" class="icon-btn" aria-label="Previous day" data-i18n-label="Previous day">&#8249;</button>
     <button id="day-label" class="day-label" aria-live="polite">
       <div class="day-label-row">
         <span id="day-label-text">Today</span>
         <span class="day-compact-sep">•</span>
-        <span class="day-compact-kcal"><span id="day-compact-kcal">0</span><small>kcal</small></span>
+        <span class="day-compact-kcal"><span id="day-compact-kcal">0</span><small data-i18n="kcal">kcal</small></span>
       </div>
       <div id="day-compact-tracker" class="day-compact-tracker">
         <span class="day-compact-macro p"><small>P</small><span id="day-compact-p">0</span></span>
         <span class="day-compact-macro c"><small>C</small><span id="day-compact-c">0</span></span>
         <span class="day-compact-macro f"><small>F</small><span id="day-compact-f">0</span></span>
-        <span class="day-compact-macro fib"><small>Fib</small><span id="day-compact-fib">0</span></span>
+        <span class="day-compact-macro fib"><small data-i18n="Fib">Fib</small><span id="day-compact-fib">0</span></span>
       </div>
     </button>
-    <button id="next-day" class="icon-btn" aria-label="Next day">&#8250;</button>
-    <button id="open-profile" class="icon-btn profile-btn" aria-label="You">
+    <button id="next-day" class="icon-btn" aria-label="Next day" data-i18n-label="Next day">&#8250;</button>
+    <button id="open-profile" class="icon-btn profile-btn" aria-label="You" data-i18n-label="You">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"
            fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" stroke-linejoin="round">
@@ -59,7 +59,7 @@
         <path d="M4.9 20a7.1 7.1 0 0 1 14.2 0"/>
       </svg>
     </button>
-    <button id="open-settings" class="icon-btn profile-btn" aria-label="Settings">
+    <button id="open-settings" class="icon-btn profile-btn" aria-label="Settings" data-i18n-label="Settings">
       <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"
            fill="none" stroke="currentColor" stroke-width="1.8"
            stroke-linecap="round" stroke-linejoin="round">
@@ -67,7 +67,7 @@
         <path d="M19.05 15a1.6 1.6 0 0 0 .32 1.77l.06.06a1.94 1.94 0 1 1-2.74 2.74l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.94 1.94 0 1 1-3.88 0v-.09a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.77.32l-.06.06A1.94 1.94 0 1 1 4.39 16.9l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97h-.17a1.94 1.94 0 1 1 0-3.88h.09a1.6 1.6 0 0 0 1.47-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06A1.94 1.94 0 1 1 7.05 4.39l.06.06a1.6 1.6 0 0 0 1.77.32h.08a1.6 1.6 0 0 0 .97-1.47v-.17a1.94 1.94 0 1 1 3.88 0v.09a1.6 1.6 0 0 0 .97 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a1.94 1.94 0 1 1 2.74 2.74l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.47.97h.17a1.94 1.94 0 1 1 0 3.88h-.09a1.6 1.6 0 0 0-1.47.97Z"/>
       </svg>
     </button>
-    <div id="topbar-split" class="topbar-split" role="img" aria-label="Macronutrient split"></div>
+    <div id="topbar-split" class="topbar-split" role="img" aria-label="Macronutrient split" data-i18n-label="Macronutrient split"></div>
   </header>
 
   <main id="day-view" class="view">
@@ -77,16 +77,16 @@
     <section id="profile-banner" class="banner" hidden></section>
 
     <!-- Bitey Mascot Companion Card -->
-    <section id="bitey-card" class="bitey-card" role="button" tabindex="0" aria-label="Bitey companion, tap to chat">
+    <section id="bitey-card" class="bitey-card" role="button" tabindex="0" aria-label="Bitey companion, tap to chat" data-i18n-label="Bitey companion, tap to chat">
       <button id="bitey-avatar" class="bitey-avatar-btn" type="button"
-              aria-label="See Bitey bigger">
+              aria-label="See Bitey bigger" data-i18n-label="See Bitey bigger">
         <div id="bitey-svg-wrap" class="bitey-svg-wrap"></div>
       </button>
       <div class="bitey-bubble">
         <div class="bitey-bubble-tail"></div>
         <div class="bitey-head">
           <span class="bitey-badge">Bitey</span>
-          <span id="bitey-action-hint" class="bitey-hint">Tap me!</span>
+          <span id="bitey-action-hint" class="bitey-hint" data-i18n="Tap me!">Tap me!</span>
         </div>
         <p id="bitey-speech" class="bitey-speech">Rawr! What are we eating today?</p>
         <div id="bitey-actions" class="bitey-actions" hidden></div>
@@ -95,17 +95,17 @@
 
     <div id="day-cards" class="day-cards">
       <section class="totals" aria-labelledby="totals-heading">
-        <h2 id="totals-heading" class="sr-only">Day total</h2>
+        <h2 id="totals-heading" class="sr-only" data-i18n="Day total">Day total</h2>
         <button id="open-trends" class="totals-more" type="button">
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 18V9M9.3 18V5M14.7 18v-6M20 18v-9"/>
           </svg>
-          <span>Trends</span>
+          <span data-i18n="Trends">Trends</span>
         </button>
-        <div class="kcal"><span id="day-kcal">0</span><span class="unit">kcal</span></div>
+        <div class="kcal"><span id="day-kcal">0</span><span class="unit" data-i18n="kcal">kcal</span></div>
         <div id="maintenance" class="maintenance"></div>
-        <div id="split" class="split" role="img" aria-label="Macronutrient split"></div>
+        <div id="split" class="split" role="img" aria-label="Macronutrient split" data-i18n-label="Macronutrient split"></div>
         <dl id="macros" class="macros"></dl>
       </section>
 
@@ -116,10 +116,10 @@
       <section id="weigh" class="weigh" hidden></section>
 
       <!-- Quick bite / grazing tray for zero-friction in-the-moment logging -->
-      <section class="quick-bite-tray" id="quick-bite-tray" aria-label="Grazing and quick bites">
+      <section class="quick-bite-tray" id="quick-bite-tray" aria-label="Grazing and quick bites" data-i18n-label="Grazing and quick bites">
         <div class="quick-bite-head">
-          <span class="quick-bite-title">Grazing &amp; Quick bites</span>
-          <button id="quick-custom-btn" class="quick-custom-link" type="button">+ Custom</button>
+          <span class="quick-bite-title" data-i18n="Grazing &amp; Quick bites">Grazing &amp; Quick bites</span>
+          <button id="quick-custom-btn" class="quick-custom-link" type="button" data-i18n="+ Custom">+ Custom</button>
         </div>
         <div class="quick-bite-scroll" id="quick-bite-chips"></div>
       </section>
@@ -128,23 +128,23 @@
       <div id="quick-custom-dialog" class="quick-custom-dialog" hidden>
         <form id="quick-custom-form" class="quick-custom-form">
           <div class="quick-custom-inputs">
-            <input id="quick-name" type="text" placeholder="What did you bite?" autocomplete="off">
+            <input id="quick-name" type="text" placeholder="What did you bite?" data-i18n-placeholder="What did you bite?" autocomplete="off">
             <div class="quick-custom-row">
-              <input id="quick-kcal" type="number" inputmode="numeric" min="1" max="2000" placeholder="Calories (kcal)" required>
-              <input id="quick-grams" type="number" inputmode="numeric" min="1" max="1000" placeholder="Grams (optional)">
+              <input id="quick-kcal" type="number" inputmode="numeric" min="1" max="2000" placeholder="Calories (kcal)" data-i18n-placeholder="Calories (kcal)" required>
+              <input id="quick-grams" type="number" inputmode="numeric" min="1" max="1000" placeholder="Grams (optional)" data-i18n-placeholder="Grams (optional)">
             </div>
           </div>
           <div class="quick-custom-actions">
-            <button class="primary" type="submit">Log snack</button>
-            <button id="quick-custom-cancel" class="secondary" type="button">Cancel</button>
+            <button class="primary" type="submit" data-i18n="Log snack">Log snack</button>
+            <button id="quick-custom-cancel" class="secondary" type="button" data-i18n="Cancel">Cancel</button>
           </div>
         </form>
       </div>
 
       <section aria-labelledby="entries-heading">
-        <h2 id="entries-heading" class="section-head">Meals</h2>
+        <h2 id="entries-heading" class="section-head" data-i18n="Meals">Meals</h2>
         <ul id="entries" class="entries"></ul>
-        <p id="empty-day" class="empty" hidden>Nothing logged yet.</p>
+        <p id="empty-day" class="empty" hidden data-i18n="Nothing logged yet.">Nothing logged yet.</p>
       </section>
     </div>
   </main>
@@ -153,16 +153,16 @@
        The camera is the path used ten times a week and it keeps the widest
        target; this exists for a photograph you already have, and on Android
        the share sheet is the better route to it anyway. -->
-  <button id="pick-photo" class="pick-photo" type="button">Already have a photo?</button>
+  <button id="pick-photo" class="pick-photo" type="button" data-i18n="Already have a photo?">Already have a photo?</button>
 
-  <nav class="actions" aria-label="Add food">
+  <nav class="actions" aria-label="Add food" data-i18n-label="Add food">
     <button id="add-manual" class="action" type="button">
       <svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23">
         <path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3Z" fill="none" stroke="currentColor"
               stroke-width="1.7" stroke-linejoin="round"/>
         <path d="M14 7.5 17 10.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
-      <span>Manual</span>
+      <span data-i18n="Manual">Manual</span>
     </button>
 
     <button id="add-barcode" class="action" type="button">
@@ -171,16 +171,16 @@
               fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
         <path d="M7 8v8M10.2 8v8M13.8 8v8M17 8v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
       </svg>
-      <span>Barcode</span>
+      <span data-i18n="Barcode">Barcode</span>
     </button>
 
-    <button id="add-btn" class="action primary-action" type="button" aria-label="Add a meal from a photo">
+    <button id="add-btn" class="action primary-action" type="button" aria-label="Add a meal from a photo" data-i18n-label="Add a meal from a photo">
       <svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24">
         <path d="M12 6.5h-1.2l-.9-1.4a1 1 0 0 0-.84-.45H8a1 1 0 0 0-.84.45l-.9 1.4H4.8A1.8 1.8 0 0 0 3 8.3v8.4a1.8 1.8 0 0 0 1.8 1.8h14.4a1.8 1.8 0 0 0 1.8-1.8V8.3a1.8 1.8 0 0 0-1.8-1.8H12Z"
               fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
         <circle cx="12" cy="12.6" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
       </svg>
-      <span>Photo</span>
+      <span data-i18n="Photo">Photo</span>
     </button>
   </nav>
 
@@ -196,7 +196,7 @@
       <div class="sheet-grab" aria-hidden="true"></div>
       <header class="sheet-head">
         <h2 id="review-heading">Check the portion</h2>
-        <button id="review-close" class="icon-btn" aria-label="Discard">&times;</button>
+        <button id="review-close" class="icon-btn" aria-label="Discard" data-i18n-label="Discard">&times;</button>
       </header>
 
       <div id="review-body">
@@ -213,11 +213,11 @@
             Not what you're eating?
           </button>
           <div id="correct-form" hidden>
-            <label class="sr-only" for="correct-text">What is it really?</label>
+            <label class="sr-only" for="correct-text" data-i18n="What is it really?">What is it really?</label>
             <input id="correct-text" type="text" autocomplete="off"
-                   placeholder="e.g. it's vegetarian, not chicken">
-            <button id="correct-go" class="secondary" type="button">Read it again</button>
-            <p class="hint">Your word beats the photo. It works the whole dish out afresh.</p>
+                   placeholder="e.g. it's vegetarian, not chicken" data-i18n-placeholder="e.g. it&#x27;s vegetarian, not chicken">
+            <button id="correct-go" class="secondary" type="button" data-i18n="Read it again">Read it again</button>
+            <p class="hint" data-i18n="Your word beats the photo. It works the whole dish out afresh.">Your word beats the photo. It works the whole dish out afresh.</p>
           </div>
         </section>
 
@@ -230,18 +230,16 @@
              destroy the measurement in order to record a decision about it. -->
         <section class="ate-block" id="ate-block" hidden>
           <div class="ate-head">
-            <span id="ate-label">How much did you eat?</span>
+            <span id="ate-label" data-i18n="How much did you eat?">How much did you eat?</span>
             <output id="ate-out" for="ate-row">all of it</output>
           </div>
           <div class="ate-row" id="ate-row" role="group" aria-labelledby="ate-label">
             <button type="button" data-ate="0.25">&frac14;</button>
             <button type="button" data-ate="0.5">&frac12;</button>
             <button type="button" data-ate="0.75">&frac34;</button>
-            <button type="button" data-ate="1" class="is-on">all</button>
+            <button type="button" data-ate="1" class="is-on" data-i18n="all">all</button>
           </div>
-          <button id="leftovers-shoot" class="link-btn" type="button">
-            Ate some things and not others? Photograph what's left
-          </button>
+          <button id="leftovers-shoot" class="link-btn" type="button" data-i18n="Ate some things and not others? Photograph what&#x27;s left">Ate some things and not others? Photograph what&#x27;s left</button>
           <p class="hint" id="ate-hint"></p>
         </section>
         <input id="file-leftovers" type="file" accept="image/*" capture="environment" hidden>
@@ -251,13 +249,13 @@
              that is rarer than knowing you left a quarter. -->
         <section class="weight-block" id="weight-block">
           <div class="weight-head">
-            <label for="total-weight">Total weight on the plate</label>
+            <label for="total-weight" data-i18n="Total weight on the plate">Total weight on the plate</label>
             <output id="weight-out" for="total-weight">0 g</output>
           </div>
           <input id="total-weight" type="range" min="20" max="1500" step="10" value="300">
           <label class="weighed-row">
             <input id="weighed" type="checkbox">
-            <span>I weighed it, or the packet said</span>
+            <span data-i18n="I weighed it, or the packet said">I weighed it, or the packet said</span>
           </label>
           <p class="hint" id="weight-hint"></p>
         </section>
@@ -266,7 +264,7 @@
              the number has to be visible while the slider is being dragged,
              or the correction is being made blind. -->
         <section class="review-totals">
-          <div class="kcal"><span id="review-kcal">0</span><span class="unit">kcal</span></div>
+          <div class="kcal"><span id="review-kcal">0</span><span class="unit" data-i18n="kcal">kcal</span></div>
           <p id="review-range" class="range-line"></p>
           <dl id="review-macros" class="macros"></dl>
         </section>
@@ -275,9 +273,9 @@
 
         <section class="finder">
           <div class="finder-row">
-            <input id="food-q" type="search" placeholder="Add a food by name"
-                   autocomplete="off" spellcheck="false" aria-label="Search for a food">
-            <button id="scan-btn" class="icon-btn" type="button" aria-label="Scan a barcode">
+            <input id="food-q" type="search" placeholder="Add a food by name" data-i18n-placeholder="Add a food by name"
+                   autocomplete="off" spellcheck="false" aria-label="Search for a food" data-i18n-label="Search for a food">
+            <button id="scan-btn" class="icon-btn" type="button" aria-label="Scan a barcode" data-i18n-label="Scan a barcode">
               <svg viewBox="0 0 24 24" aria-hidden="true" width="22" height="22">
                 <path d="M3 7V5.4A1.4 1.4 0 0 1 4.4 4H7M17 4h2.6A1.4 1.4 0 0 1 21 5.4V7M21 17v1.6a1.4 1.4 0 0 1-1.4 1.4H17M7 20H4.4A1.4 1.4 0 0 1 3 18.6V17"
                       fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -293,18 +291,17 @@
           </button>
 
           <div id="manual-form" class="manual" hidden>
-            <p class="hint">For when a menu or a label states them. Everything here is taken as
-              exact — no photo estimate is applied.</p>
+            <p class="hint" data-i18n="For when a menu or a label states them. Everything here is taken as exact — no photo estimate is applied.">For when a menu or a label states them. Everything here is taken as exact — no photo estimate is applied.</p>
 
-            <label class="sr-only" for="m-name">Food name</label>
-            <input id="m-name" type="text" placeholder="What was it?" autocomplete="off">
+            <label class="sr-only" for="m-name" data-i18n="Food name">Food name</label>
+            <input id="m-name" type="text" placeholder="What was it?" data-i18n-placeholder="What was it?" autocomplete="off">
 
             <div class="manual-basis">
-              <label for="m-grams">Amount<span class="unit-tag">grams</span>
+              <label for="m-grams">Amount<span class="unit-tag" data-i18n="grams">grams</span>
                 <input id="m-grams" type="number" inputmode="decimal" min="1" max="5000" step="1"></label>
               <div class="chips" id="m-basis">
-                <button class="chip" type="button" data-basis="portion" aria-pressed="true">for this amount</button>
-                <button class="chip" type="button" data-basis="per100" aria-pressed="false">per 100 g</button>
+                <button class="chip" type="button" data-basis="portion" aria-pressed="true" data-i18n="for this amount">for this amount</button>
+                <button class="chip" type="button" data-basis="per100" aria-pressed="false" data-i18n="per 100 g">per 100 g</button>
               </div>
             </div>
 
@@ -317,7 +314,7 @@
             </div>
 
             <p id="manual-warn" class="hint warn-text" hidden></p>
-            <button id="m-add" class="secondary" type="button">Add it</button>
+            <button id="m-add" class="secondary" type="button" data-i18n="Add it">Add it</button>
           </div>
         </section>
 
@@ -328,22 +325,22 @@
               <circle cx="12" cy="12" r="9"/>
               <polyline points="12 7 12 12 15 15"/>
             </svg>
-            <span>Any grazing before this meal?</span>
+            <span data-i18n="Any grazing before this meal?">Any grazing before this meal?</span>
           </button>
           <div id="grazing-panel" class="grazing-panel" hidden>
-            <p class="hint">Tap to include recent snacks or rough bites with this entry.</p>
+            <p class="hint" data-i18n="Tap to include recent snacks or rough bites with this entry.">Tap to include recent snacks or rough bites with this entry.</p>
             <div id="grazing-chips" class="chips grazing-chips"></div>
           </div>
         </section>
 
         <fieldset class="meals">
-          <legend>Meal</legend>
+          <legend data-i18n="Meal">Meal</legend>
           <div id="meal-picker" class="chips"></div>
         </fieldset>
       </div>
 
       <footer class="sheet-foot">
-        <button id="dup-entry" class="secondary" type="button" hidden>Duplicate</button>
+        <button id="dup-entry" class="secondary" type="button" hidden data-i18n="Duplicate">Duplicate</button>
         <button id="save-entry" class="primary" type="button">Save</button>
       </footer>
     </div>
@@ -358,22 +355,22 @@
            exactly like a sheet you cannot. -->
       <div class="sheet-grab" aria-hidden="true"></div>
       <header class="sheet-head">
-        <h2 id="trends-heading">Trends</h2>
-        <button id="trends-close" class="icon-btn" aria-label="Close">&times;</button>
+        <h2 id="trends-heading" data-i18n="Trends">Trends</h2>
+        <button id="trends-close" class="icon-btn" aria-label="Close" data-i18n-label="Close">&times;</button>
       </header>
 
       <div id="trends-body">
         <div class="chips range" id="range-picker">
-          <button class="chip" type="button" data-range="14" aria-pressed="false">14 days</button>
-          <button class="chip" type="button" data-range="30" aria-pressed="true">30 days</button>
-          <button class="chip" type="button" data-range="90" aria-pressed="false">90 days</button>
+          <button class="chip" type="button" data-range="14" aria-pressed="false" data-i18n="14 days">14 days</button>
+          <button class="chip" type="button" data-range="30" aria-pressed="true" data-i18n="30 days">30 days</button>
+          <button class="chip" type="button" data-range="90" aria-pressed="false" data-i18n="90 days">90 days</button>
         </div>
 
-        <h3 class="section-head">Weight</h3>
+        <h3 class="section-head" data-i18n="Weight">Weight</h3>
         <div id="chart-weight" class="chart"></div>
         <p class="hint" id="trend-weight"></p>
 
-        <h3 class="section-head">What you ate</h3>
+        <h3 class="section-head" data-i18n="What you ate">What you ate</h3>
         <div id="chart-intake" class="chart"></div>
         <div id="chart-legend" class="legend"></div>
         <p class="hint" id="trend-intake"></p>
@@ -384,34 +381,32 @@
   <div id="profile" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="profile-heading">
     <div class="sheet-inner">
       <header class="sheet-head">
-        <h2 id="profile-heading">You</h2>
-        <button id="profile-close" class="icon-btn" aria-label="Close">&times;</button>
+        <h2 id="profile-heading" data-i18n="You">You</h2>
+        <button id="profile-close" class="icon-btn" aria-label="Close" data-i18n-label="Close">&times;</button>
       </header>
 
       <div id="profile-body">
       <form id="profile-form" class="stack">
-        <p class="hint">Things that rarely change. Used only to estimate what you burn on an
-          average day; your weight comes from your weigh-ins below. It stays on this server and
-          is never sent anywhere else.</p>
+        <p class="hint" data-i18n="Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays on this server and is never sent anywhere else.">Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays on this server and is never sent anywhere else.</p>
 
         <!-- Weight is not here. It is logged daily below and on the day view,
              and having a second copy in this form meant two numbers for the
              same thing on one screen, disagreeing with each other. -->
         <div class="field-row">
-          <label for="p-height">Height<span class="unit-tag">cm</span>
+          <label for="p-height">Height<span class="unit-tag" data-i18n="cm">cm</span>
             <input id="p-height" type="number" inputmode="numeric" min="90" max="260" step="1"></label>
           <!-- The year, not the age. An age is right once and wrong every year
                afterwards; the year keeps the maintenance estimate honest
                without anyone having to remember to update it. -->
-          <label for="p-birth-year">Born<span id="p-age-hint" class="unit-tag">year</span>
+          <label for="p-birth-year">Born<span id="p-age-hint" class="unit-tag" data-i18n="year">year</span>
             <input id="p-birth-year" type="number" inputmode="numeric" step="1"></label>
         </div>
 
         <label for="p-sex">Sex
           <select id="p-sex">
-            <option value="">Prefer not to say</option>
-            <option value="female">Female</option>
-            <option value="male">Male</option>
+            <option value="" data-i18n="Prefer not to say">Prefer not to say</option>
+            <option value="female" data-i18n="Female">Female</option>
+            <option value="male" data-i18n="Male">Male</option>
           </select></label>
 
         <label for="p-activity">Typical week
@@ -420,38 +415,38 @@
         <div class="field-row">
           <label for="p-diet">Diet
             <select id="p-diet">
-              <option value="omnivore">Omnivore</option>
-              <option value="vegetarian">Vegetarian</option>
-              <option value="vegan">Vegan</option>
-              <option value="pescatarian">Pescatarian</option>
-              <option value="keto">Keto</option>
+              <option value="omnivore" data-i18n="Omnivore">Omnivore</option>
+              <option value="vegetarian" data-i18n="Vegetarian">Vegetarian</option>
+              <option value="vegan" data-i18n="Vegan">Vegan</option>
+              <option value="pescatarian" data-i18n="Pescatarian">Pescatarian</option>
+              <option value="keto" data-i18n="Keto">Keto</option>
             </select></label>
           <label for="p-goal">Focus
             <select id="p-goal">
-              <option value="balanced">Balanced</option>
-              <option value="high_protein">High protein</option>
-              <option value="low_fat">Low fat</option>
-              <option value="low_carb">Low carb</option>
+              <option value="balanced" data-i18n="Balanced">Balanced</option>
+              <option value="high_protein" data-i18n="High protein">High protein</option>
+              <option value="low_fat" data-i18n="Low fat">Low fat</option>
+              <option value="low_carb" data-i18n="Low carb">Low carb</option>
             </select></label>
         </div>
 
         <div id="profile-result" class="maintenance"></div>
-        <button class="primary" type="submit">Save</button>
+        <button class="primary" type="submit" data-i18n="Save">Save</button>
         <p id="profile-error" class="error" role="alert" hidden></p>
       </form>
 
       <section class="devices-block">
-        <h3 class="section-head">Weight</h3>
+        <h3 class="section-head" data-i18n="Weight">Weight</h3>
         <div class="weigh-row">
-          <label for="w-kg" class="sr-only">Today's weight in kilograms</label>
+          <label for="w-kg" class="sr-only" data-i18n="Today&#x27;s weight in kilograms">Today&#x27;s weight in kilograms</label>
           <input id="w-kg" type="number" inputmode="decimal" min="20" max="400" step="0.1"
-                 placeholder="Weight today">
-          <button id="w-save" class="secondary" type="button">Log</button>
+                 placeholder="Weight today" data-i18n-placeholder="Weight today">
+          <button id="w-save" class="secondary" type="button" data-i18n="Log">Log</button>
         </div>
-        <div id="weight-chart" class="spark" role="img" aria-label="Weight trend"></div>
+        <div id="weight-chart" class="spark" role="img" aria-label="Weight trend" data-i18n-label="Weight trend"></div>
         <p class="hint" id="weight-trend"></p>
 
-        <h3 class="section-head">What you burn</h3>
+        <h3 class="section-head" data-i18n="What you burn">What you burn</h3>
         <div id="exp-detail" class="exp"></div>
 
       </section>
@@ -462,15 +457,19 @@
   <div id="settings" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="settings-heading">
     <div class="sheet-inner">
       <header class="sheet-head">
-        <h2 id="settings-heading">Settings</h2>
-        <button id="settings-close" class="icon-btn" aria-label="Close">&times;</button>
+        <h2 id="settings-heading" data-i18n="Settings">Settings</h2>
+        <button id="settings-close" class="icon-btn" aria-label="Close" data-i18n-label="Close">&times;</button>
       </header>
 
       <div id="settings-body">
       <section class="devices-block">
-        <h3 class="section-head">Your devices</h3>
+        <h3 class="section-head" data-i18n="Language">Language</h3>
+        <div id="language-choice" class="chips" role="group"
+             aria-label="Language" data-i18n-label="Language"><!-- Rendered by JS --></div>
+
+        <h3 class="section-head" data-i18n="Your devices">Your devices</h3>
         <ul id="device-list" class="devices"></ul>
-        <button id="link-device" class="secondary" type="button">Add another device</button>
+        <button id="link-device" class="secondary" type="button" data-i18n="Add another device">Add another device</button>
 
         <div id="code-box" class="code-box" hidden>
           <p class="code-label" id="code-title"></p>
@@ -478,23 +477,22 @@
           <p class="hint" id="code-hint"></p>
         </div>
 
-        <h3 class="section-head">Your data</h3>
-        <p class="hint">Everything this account holds, with nothing withheld and no
-          account needed to read it back.</p>
+        <h3 class="section-head" data-i18n="Your data">Your data</h3>
+        <p class="hint" data-i18n="Everything this account holds, with nothing withheld and no account needed to read it back.">Everything this account holds, with nothing withheld and no account needed to read it back.</p>
         <div class="export-row">
-          <a class="secondary" href="/api/export.zip" download>Everything, with photos</a>
-          <a class="secondary" href="/api/export.csv" download>Spreadsheet (CSV)</a>
+          <a class="secondary" href="/api/export.zip" download data-i18n="Everything, with photos">Everything, with photos</a>
+          <a class="secondary" href="/api/export.csv" download data-i18n="Spreadsheet (CSV)">Spreadsheet (CSV)</a>
           <a class="secondary" href="/api/export.json" download>JSON</a>
         </div>
 
-        <h3 class="section-head">Recovery</h3>
+        <h3 class="section-head" data-i18n="Recovery">Recovery</h3>
         <p class="hint" id="recovery-state"></p>
         <button id="recovery-btn" class="secondary" type="button">Create a recovery code</button>
       </section>
       </div>
 
       <footer class="sheet-foot muted-foot">
-        <button id="logout" class="text-btn" type="button">Sign this device out</button>
+        <button id="logout" class="text-btn" type="button" data-i18n="Sign this device out">Sign this device out</button>
       </footer>
     </div>
   </div>
@@ -510,7 +508,7 @@
   <div class="wait-card" role="alertdialog" aria-modal="true" aria-labelledby="wait-msg">
     <div id="wait-spin" class="wait-spin" aria-hidden="true"></div>
     <p id="wait-msg"></p>
-    <button id="wait-ok" class="primary" type="button" hidden>OK</button>
+    <button id="wait-ok" class="primary" type="button" hidden data-i18n="OK">OK</button>
   </div>
 </div>
 
