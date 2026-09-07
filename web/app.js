@@ -3462,40 +3462,84 @@ $('profile-form').addEventListener('submit', async (ev) => {
  * different smoother would put a line on screen that disagrees with the number
  * beside it.
  */
+/**
+ * The weigh-ins, with axes.
+ *
+ * The viewBox is measured from the container rather than fixed at 300 wide,
+ * because the labels are text: a fixed box stretched to fit with
+ * preserveAspectRatio="none" scales the glyphs horizontally with everything
+ * else, and the numbers come out squashed or smeared depending on the phone.
+ * Matching the box to the element means one unit is one pixel and text is the
+ * size it says it is.
+ */
 function renderWeightChart(rows, trend) {
   const el = $('weight-chart');
   const series = smoothSeries(rows);
 
+  // Measured, with a sane floor for the first paint before layout settles.
+  const w = Math.max(240, Math.round(el.clientWidth || 300));
+  const h = 108;
+
   if (!series.length) {
-    el.innerHTML = '<svg viewBox="0 0 300 84" preserveAspectRatio="none">'
-      + '<text class="empty" x="8" y="46">No weigh-ins yet.</text></svg>';
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img">`
+      + `<text class="empty" x="8" y="${h / 2}">${esc(t('No weigh-ins yet.'))}</text></svg>`;
     return;
   }
 
-  const w = 300, h = 84, pad = 6;
+  // Room for the kilogram labels on the left and the dates underneath.
+  const padL = 38, padR = 8, padT = 10, padB = 20;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
   const xs = series.map((p) => p.at);
   const ys = series.map((p) => p.kg);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   const lo = Math.min(...ys), hi = Math.max(...ys);
+
+  // A flat series must not fill the box, or a steady week looks like a cliff.
   const flat = hi - lo < 0.05;
-  const y0 = flat ? lo - 0.5 : lo;
-  const spanY = flat ? 1 : Math.max(0.5, hi - lo); // never let a flat series fill the box
+  const mid = (hi + lo) / 2;
+  const yLo = flat ? mid - 0.5 : lo;
+  const yHi = flat ? mid + 0.5 : hi;
+  const spanY = Math.max(0.5, yHi - yLo);
 
-  const px = (t) => pad + ((t - x0) / Math.max(1, x1 - x0)) * (w - pad * 2);
-  const py = (kg) => h - pad - ((kg - y0) / spanY) * (h - pad * 2);
+  const px = (at) => padL + ((at - x0) / Math.max(1, x1 - x0)) * plotW;
+  const py = (kg) => padT + (1 - (kg - yLo) / spanY) * plotH;
 
-  const dots = series.map((p) => `<circle class="raw" cx="${px(p.at).toFixed(1)}" cy="${py(p.kg).toFixed(1)}" r="2"/>`).join('');
+  // Three gridlines: the range and its middle. More would be clutter at this
+  // size, and fewer would not say what the middle of the chart means.
+  const ticks = [yHi, (yHi + yLo) / 2, yLo];
+  const grid = ticks.map((kg) => {
+    const y = py(kg).toFixed(1);
+    return `<line class="grid" x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}"/>`
+      + `<text class="axis" x="${padL - 6}" y="${y}" text-anchor="end"`
+      + ` dominant-baseline="middle">${kg.toFixed(1)}</text>`;
+  }).join('');
+
+  const day = (at) => new Date(at).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
+  const axisY = h - padB + 13;
+  const dates = x1 === x0
+    ? `<text class="axis" x="${padL}" y="${axisY}">${esc(day(x0))}</text>`
+    : `<text class="axis" x="${padL}" y="${axisY}">${esc(day(x0))}</text>`
+      + `<text class="axis" x="${w - padR}" y="${axisY}" text-anchor="end">${esc(day(x1))}</text>`;
+
+  const dots = series
+    .map((p) => `<circle class="raw" cx="${px(p.at).toFixed(1)}" cy="${py(p.kg).toFixed(1)}" r="2.5"/>`)
+    .join('');
 
   let line = '';
   if (trend?.interceptKg !== undefined) {
-    const fitAt = (t) => trend.interceptKg + trend.slopeKgPerDay * ((t - trend.fitFrom) / 86400000);
-    line = `<path class="trend" d="M${px(x0).toFixed(1)},${py(fitAt(x0)).toFixed(1)}`
-      + ` L${px(x1).toFixed(1)},${py(fitAt(x1)).toFixed(1)}"/>`;
+    const fitAt = (at) => trend.interceptKg + trend.slopeKgPerDay * ((at - trend.fitFrom) / 86400000);
+    // Clamped to the drawn range: an extrapolated fit can sit well outside the
+    // measured weights and would otherwise leave the plot entirely.
+    const clamp = (kg) => Math.min(yHi, Math.max(yLo, kg));
+    line = `<path class="trend" d="M${px(x0).toFixed(1)},${py(clamp(fitAt(x0))).toFixed(1)}`
+      + ` L${px(x1).toFixed(1)},${py(clamp(fitAt(x1))).toFixed(1)}"/>`;
   }
 
-  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${dots}${line}</svg>`;
-  el.setAttribute('aria-label',
-    `Weight from ${series[0].kg.toFixed(1)} to ${series[series.length - 1].kg.toFixed(1)} kilograms`);
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img">${grid}${dates}${dots}${line}</svg>`;
+  el.setAttribute('aria-label', t('Weight from {0} to {1} kilograms',
+    series[0].kg.toFixed(1), series[series.length - 1].kg.toFixed(1)));
 }
 
 function renderExpenditure(exp) {
