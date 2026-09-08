@@ -326,8 +326,15 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   overflow: hidden;
   cursor: pointer;
   user-select: none;
-  transition: padding .2s cubic-bezier(.22,.8,.3,1), transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  /* Padding is deliberately not transitioned. It is one of three things that
+     change when the card shrinks -- the avatar and the speech type are the
+     others, and neither animates -- so animating this one alone meant the
+     height fell in two stages, and the margin below could only compensate for
+     one of them at a time. Instant, and the flow height never moves. */
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
+/* Held only while the shrink is being measured. */
+.bitey-card.is-measuring, .bitey-card.is-measuring * { transition: none !important; }
 .bitey-card:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
   box-shadow: 0 6px 20px rgba(0,0,0,.07);
@@ -353,6 +360,13 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   padding: 8px 12px 9px 10px;
   box-shadow: 0 4px 18px rgba(0,0,0,.09);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  /* The card is sticky, which means it is still in flow and still takes up
+     the room it occupies. Shrinking it therefore shortened the whole document
+     and hauled everything below it upwards -- 65px of jump for two pixels of
+     scroll, which is what made the page feel like it was fighting back. The
+     margin gives back exactly what the box gave up, so the page below never
+     learns that anything changed. */
+  margin-bottom: calc(14px + var(--bitey-shrink, 0px));
 }
 .bitey-card.is-sticky .bitey-avatar-btn {
   flex: 0 0 44px;

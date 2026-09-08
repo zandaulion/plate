@@ -3834,15 +3834,105 @@ function initStickyDayTracker() {
   updateTopbarHeight();
   window.addEventListener('resize', updateTopbarHeight);
 
+  /**
+   * How much height the card loses when it shrinks.
+   *
+   * Measured rather than written down. The collapse comes from three separate
+   * rules -- the card's padding, the avatar's box, the speech type size -- so
+   * a constant worked out by hand would be wrong the moment any one of them
+   * moved, and wrong anyway in a language whose quote wraps to a different
+   * number of lines.
+   */
+  const measureShrink = () => {
+    if (!biteyCard) return null;
+    const wasSticky = biteyCard.classList.contains('is-sticky');
+    biteyCard.classList.add('is-measuring');
+
+    biteyCard.classList.remove('is-sticky');
+    const open = biteyCard.getBoundingClientRect().height;
+    biteyCard.classList.add('is-sticky');
+    const shut = biteyCard.getBoundingClientRect().height;
+
+    biteyCard.classList.toggle('is-sticky', wasSticky);
+    biteyCard.getBoundingClientRect();      // flush before transitions resume
+    biteyCard.classList.remove('is-measuring');
+
+    // Nothing laid out yet, so both readings are zero and their difference is
+    // a lie. Say so, and let the caller ask again later.
+    return open > 0 ? Math.max(0, Math.round(open - shut)) : null;
+  };
+
+  /**
+   * Measured on the first scroll rather than at startup.
+   *
+   * At startup the card has no rendered box -- the shell is still coming up --
+   * so both readings were zero and the compensation silently came out as no
+   * compensation at all. By the time anything has scrolled it is on screen and
+   * has its real height, which is the only moment the number is worth taking.
+   */
+  /**
+   * When the card is allowed to shrink.
+   *
+   * Not a round number, and not 20. The card is sticky, so once pinned it
+   * leaves its slot behind in the flow and the page below scrolls underneath.
+   * Shrinking it while that slot is still on screen uncovers the difference as
+   * a band of empty page -- which is what shrinking at 20px did, and what the
+   * margin that stops the jump would otherwise make worse.
+   *
+   * The moment the slot has scrolled up to exactly where the shrunken card
+   * ends, nothing is uncovered and the handoff is seamless. That is here:
+   * the card's own position, plus what it is about to lose, less the offset it
+   * pins at.
+   */
+  let shrink = null;
+  let stickOn = Infinity;
+
+  const ensureShrink = () => {
+    if (shrink !== null) return;
+    const px = measureShrink();
+    if (px === null) return;                 // not laid out yet; ask again later
+
+    shrink = px;
+    document.documentElement.style.setProperty('--bitey-shrink', `${px}px`);
+
+    // offsetTop, not a bounding rect: the card is `position: sticky` at all
+    // times, so once pinned its rect reports where it is painted rather than
+    // where it belongs, and the threshold would be computed from the answer it
+    // is meant to produce.
+    let slotTop = 0;
+    for (let n = biteyCard; n; n = n.offsetParent) slotTop += n.offsetTop;
+
+    const pinnedAt = parseFloat(getComputedStyle(biteyCard).top) || 0;
+    stickOn = Math.max(24, Math.round(slotTop + px - pinnedAt));
+  };
+
+  // Two thresholds, not one. With a single boundary a finger resting near the
+  // edge flipped the card between its two sizes on every small movement.
+  const DEAD_ZONE = 16;
+  let stuck = false;
+
   const updateStickyState = () => {
-    const isScrolled = window.scrollY > 20;
-    topbar.classList.toggle('scrolled', isScrolled);
-    if (biteyCard) {
-      biteyCard.classList.toggle('is-sticky', isScrolled);
-    }
+    const y = window.scrollY;
+    ensureShrink();
+
+    if (y > stickOn) stuck = true;
+    else if (y < stickOn - DEAD_ZONE) stuck = false;
+
+    // The topbar has its own threshold: it is fixed rather than sticky, so it
+    // takes no part in the flow and can change whenever it looks best.
+    topbar.classList.toggle('scrolled', y > 20);
+    if (biteyCard) biteyCard.classList.toggle('is-sticky', stuck);
   };
 
   window.addEventListener('scroll', updateStickyState, { passive: true });
+  // A rotation changes how the speech wraps, and with it both the height being
+  // given back and where the slot sits. Re-measure at once rather than waiting
+  // for the next scroll, since the card may be stuck already.
+  window.addEventListener('resize', () => {
+    shrink = null;
+    ensureShrink();
+    updateStickyState();
+  });
   updateStickyState();
 }
 
