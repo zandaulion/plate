@@ -33,7 +33,7 @@ import {
   lookupBarcode, searchFoods, LookupError, usdaConfigured,
   productImagePath, hasProductImage
 } from './foods.js';
-import { summariseRecent } from '../core/foods.js';
+import { summariseRecent, collapseRepeatable } from '../core/foods.js';
 import { toJson, toCsv } from '../core/export.js';
 import { smoothSeries, weightTrend, trendGap } from '../core/weight.js';
 import { adaptiveExpenditure } from '../core/expenditure.js';
@@ -576,6 +576,44 @@ app.get('/api/entries', requireDevice, (req, res) => {
   });
 });
 
+/**
+ * Distinct meals from earlier days, for logging one again.
+ *
+ * Strictly before `before`, because the day being logged into is already on
+ * screen with its own duplicate button -- offering today's meals here would be
+ * the same action twice, in two places, meaning different things.
+ *
+ * Deliberately lighter than GET /api/entries, which carries the day summary,
+ * the weight history and an expenditure estimate. None of that means anything
+ * to a picker, and this reads a fortnight of days rather than one.
+ */
+app.get('/api/entries/recent', requireDevice, (req, res) => {
+  const days = Math.min(60, Math.max(1, Number(req.query.days) || 14));
+  const before = typeof req.query.before === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.before)
+    ? req.query.before
+    : null;
+  if (!before) return res.status(400).json({ error: 'bad_day' });
+
+  const from = new Date(Date.parse(`${before}T00:00:00Z`) - days * 86400000)
+    .toISOString().slice(0, 10);
+
+  const rows = db.prepare(`
+    SELECT id, day, meal, photo_id, items_json, totals_json
+    FROM entries
+    WHERE account_id = ? AND day < ? AND day >= ?
+    ORDER BY day DESC, created_at DESC
+  `).all(req.device.account_id, before, from).map((r) => ({
+    id: r.id,
+    day: r.day,
+    meal: r.meal,
+    photoId: r.photo_id,
+    items: JSON.parse(r.items_json),
+    totals: JSON.parse(r.totals_json)
+  }));
+
+  res.json({ meals: collapseRepeatable(rows) });
+});
+
 /** Recent days, for the history strip. */
 app.get('/api/days', requireDevice, (req, res) => {
   const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 14));
@@ -651,8 +689,14 @@ app.post('/api/entries/:id/duplicate', requireDevice, (req, res) => {
   const meal = b.meal && MEALS.includes(b.meal) ? b.meal : row.meal;
   const note = typeof b.note === 'string' ? b.note.slice(0, 500) : row.note;
 
+  // Copying the photograph is right for "I had two of these": one plate was
+  // photographed and eaten twice over. It is wrong for repeating a meal onto a
+  // later day, where the picture would show food cooked on a different
+  // afternoon and the entry would look photographed when nobody took one.
+  const copyPhoto = b.copyPhoto !== false;
+
   let photoId = null;
-  if (row.photo_id) {
+  if (row.photo_id && copyPhoto) {
     try {
       const ext = path.extname(row.photo_id) || '.jpg';
       photoId = `${crypto.randomUUID()}${ext}`;

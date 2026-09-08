@@ -1764,6 +1764,93 @@ function initSheetSwipeDown(sheetId, scrollerId, close) {
 
 initSheetSwipeDown('trends', 'trends-body', closeTrends);
 
+// --------------------------------------------------------- repeat a meal
+
+/**
+ * Log something eaten before onto the day on screen.
+ *
+ * Whole entries, not the quick-bite tray's items. "The same sandwich as
+ * yesterday" is one thing to tap; the tray holds bread and cheese separately
+ * and ranks both below whatever gets eaten every day.
+ *
+ * The photograph is deliberately not copied. It would show food cooked on a
+ * different afternoon, and an entry that looks photographed when nobody took a
+ * picture is a worse record than one that admits it was repeated.
+ */
+const closeRepeat = () => dismissScreen('repeat');
+
+async function loadRepeat() {
+  const list = $('repeat-list');
+  list.innerHTML = `<li class="repeat-empty">${esc(t('Looking…'))}</li>`;
+  try {
+    const { meals } = await api(
+      `/api/entries/recent?before=${encodeURIComponent(state.day)}&days=14`);
+    renderRepeat(meals || []);
+  } catch {
+    list.innerHTML = `<li class="repeat-empty">${esc(t('Could not load earlier meals.'))}</li>`;
+  }
+}
+
+function renderRepeat(meals) {
+  const list = $('repeat-list');
+  if (!meals.length) {
+    list.innerHTML = `<li class="repeat-empty">${esc(t('Nothing logged in the two weeks before this day.'))}</li>`;
+    return;
+  }
+
+  list.innerHTML = meals.map((m) => {
+    const thumb = m.photoId
+      ? `<img src="/api/photo/${encodeURIComponent(m.photoId)}" alt="" loading="lazy">`
+      : `<div class="noimg food-emoji" aria-hidden="true">${getFoodEmoji(m.foods)}</div>`;
+    // A bare numeral: how many times it was eaten needs no translation, and
+    // spelling it out would crowd a line that is mostly food names.
+    const often = m.uses > 1 ? `<span class="repeat-often">&times;${m.uses}</span>` : '';
+    const meal = m.meal ? ` &bull; ${esc(m.meal)}` : '';
+
+    return `<li>
+      <button class="repeat-row" type="button" data-repeat="${esc(m.id)}">
+        ${thumb}
+        <span class="repeat-main">
+          <span class="repeat-foods">${esc(m.foods)}</span>
+          <span class="repeat-meta">${esc(dayTitle(m.day))}${meal}${often}</span>
+        </span>
+        <span class="repeat-kcal">${m.calories}</span>
+      </button>
+    </li>`;
+  }).join('');
+}
+
+$('repeat-btn').addEventListener('click', () => {
+  track('repeat_open');
+  const close = screen('repeat');
+  $('repeat').hidden = false;
+  openScreen('repeat', () => { close(); $('repeat').hidden = true; });
+  loadRepeat();
+});
+$('repeat-close').addEventListener('click', closeRepeat);
+$('repeat').addEventListener('click', (ev) => { if (ev.target === $('repeat')) closeRepeat(); });
+initSheetSwipeDown('repeat', 'repeat-body', closeRepeat);
+
+$('repeat-list').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('[data-repeat]');
+  if (!btn) return;
+
+  btn.disabled = true;
+  try {
+    await api(`/api/entries/${encodeURIComponent(btn.dataset.repeat)}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify({ day: state.day, copyPhoto: false })
+    });
+    track('entry_duplicated', { source: 'repeat' });
+    closeRepeat();
+    toast(t('Logged again'));
+    await loadDay();
+  } catch (err) {
+    btn.disabled = false;
+    toast(err.message || t('Could not log that again.'));
+  }
+});
+
 // --------------------------------------------------------------- weigh-in
 
 // A dial and a needle, not a box with an arrow -- the first attempt read as

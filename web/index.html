@@ -119,7 +119,10 @@
       <section class="quick-bite-tray" id="quick-bite-tray" aria-label="Grazing and quick bites" data-i18n-label="Grazing and quick bites">
         <div class="quick-bite-head">
           <span class="quick-bite-title" data-i18n="Grazing &amp; Quick bites">Grazing &amp; Quick bites</span>
-          <button id="quick-custom-btn" class="quick-custom-link" type="button" data-i18n="+ Custom">+ Custom</button>
+          <span class="quick-bite-links">
+            <button id="repeat-btn" class="quick-custom-link" type="button" data-i18n="↺ Repeat">↺ Repeat</button>
+            <button id="quick-custom-btn" class="quick-custom-link" type="button" data-i18n="+ Custom">+ Custom</button>
+          </span>
         </div>
         <div class="quick-bite-scroll" id="quick-bite-chips"></div>
       </section>
@@ -349,6 +352,21 @@
   <!-- Two sheets, because these are two different kinds of thing: who you are
        and how the app is set up. Body measurements sitting next to device
        revocation made both harder to find. -->
+  <!-- Repeat a meal: distinct meals from earlier days, newest first. -->
+  <div id="repeat" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="repeat-heading">
+    <div class="sheet-inner">
+      <div class="sheet-grab" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 id="repeat-heading" data-i18n="Repeat a meal">Repeat a meal</h2>
+        <button id="repeat-close" class="icon-btn" aria-label="Close" data-i18n-label="Close">&times;</button>
+      </header>
+      <div id="repeat-body">
+        <p class="hint" id="repeat-hint" data-i18n="Something you ate before, logged again for this day.">Something you ate before, logged again for this day.</p>
+        <ul id="repeat-list" class="repeat-list"></ul>
+      </div>
+    </div>
+  </div>
+
   <div id="trends" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="trends-heading">
     <div class="sheet-inner">
       <!-- Without this the gesture is invisible: a sheet you can drag looks

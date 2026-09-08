@@ -388,3 +388,63 @@ export function getGrazingSuggestions(recentFoods, { limit = 3 } = {}) {
     })
     .slice(0, limit);
 }
+
+/**
+ * Collapses past entries into a list of distinct meals worth logging again.
+ *
+ * The sibling of summariseRecent, and deliberately the other way round.
+ * summariseRecent breaks entries apart into their items, because building a
+ * plate means reaching for bread and cheese separately. This keeps entries
+ * whole, because repeating a meal means reaching for the sandwich.
+ *
+ * That difference is why the quick-bite tray could never cover this: a meal
+ * eaten once yesterday is three anonymous ingredients there, each ranked below
+ * whatever gets eaten daily.
+ *
+ * Ordering is by recency alone, with no popularity term. "The same as
+ * yesterday" is the question being asked, and a staple that outranks yesterday
+ * is a worse answer to it however often it is eaten -- the opposite of the
+ * ranking summariseRecent wants.
+ *
+ * Input is one row per entry, in any order: { id, day, meal, items, totals }.
+ */
+export function collapseRepeatable(rows, { limit = 25 } = {}) {
+  const bySignature = new Map();
+
+  for (const row of rows || []) {
+    const items = Array.isArray(row?.items) ? row.items : [];
+    const names = items.map((i) => String(i?.name || '').trim()).filter(Boolean);
+    if (!names.length) continue;
+
+    const day = String(row?.day || '');
+    if (!day) continue;
+
+    // Sorted, so a meal logged with its items in a different order is still
+    // recognised as the same meal.
+    const signature = names.map((n) => n.toLowerCase()).sort().join(' ');
+    const seen = bySignature.get(signature);
+
+    // Older than one already held: it still counts towards how often this is
+    // eaten, but it is not the copy that would be made.
+    if (seen && seen.day >= day) {
+      seen.uses += 1;
+      continue;
+    }
+
+    bySignature.set(signature, {
+      // The newest occurrence is the one that gets copied: if the portions
+      // were corrected last time, that correction is the better starting point.
+      id: row.id,
+      day,
+      meal: row.meal || null,
+      foods: names.join(', '),
+      calories: Math.round(Number(row?.totals?.calories) || 0),
+      photoId: row.photoId || null,
+      uses: (seen?.uses || 0) + 1
+    });
+  }
+
+  return [...bySignature.values()]
+    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+    .slice(0, limit);
+}

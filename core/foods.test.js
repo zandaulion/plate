@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fromOpenFoodFacts, fromUsda, parseServing, rankResults, toItem, isPlausible, summariseRecent,
-  QUICK_BITES, createQuickBiteItem, getGrazingSuggestions
+  QUICK_BITES, createQuickBiteItem, getGrazingSuggestions, collapseRepeatable
 } from './foods.js';
 
 const OFF_PRODUCT = {
@@ -221,4 +221,62 @@ test('getGrazingSuggestions filters recent foods to snack/bite sizes', () => {
   assert.equal(suggestions.length, 2);
   assert.equal(suggestions[0].name, 'Almonds');
   assert.equal(suggestions[1].name, 'Dark Chocolate');
+});
+
+const entry = (id, day, names, calories, meal = null) => ({
+  id, day, meal, totals: { calories }, items: names.map((name) => ({ name }))
+});
+
+test('repeatable meals stay whole where recents break them apart', () => {
+  const rows = [entry('e1', '2026-09-07', ['Bread', 'Cheese', 'Butter'], 420, 'lunch')];
+  const out = collapseRepeatable(rows);
+  assert.equal(out.length, 1, 'one meal, not three ingredients');
+  assert.equal(out[0].foods, 'Bread, Cheese, Butter');
+  assert.equal(out[0].calories, 420);
+});
+
+test('the same meal on many days appears once, at its newest', () => {
+  const rows = [
+    entry('old', '2026-09-01', ['Porridge'], 300),
+    entry('new', '2026-09-06', ['Porridge'], 340),
+    entry('mid', '2026-09-03', ['Porridge'], 320)
+  ];
+  const out = collapseRepeatable(rows);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, 'new', 'the newest occurrence is the one copied');
+  assert.equal(out[0].calories, 340, 'and it supplies the figures');
+  assert.equal(out[0].uses, 3, 'while the older ones still count as uses');
+});
+
+test('item order does not make a second meal', () => {
+  const rows = [
+    entry('a', '2026-09-06', ['Bread', 'Cheese'], 400),
+    entry('b', '2026-09-05', ['Cheese', 'Bread'], 400)
+  ];
+  assert.equal(collapseRepeatable(rows).length, 1);
+});
+
+test('a staple does not outrank yesterday', () => {
+  // The opposite of summariseRecent's ranking, and the reason for the split:
+  // asked "same as yesterday?", the answer eaten daily is the wrong one.
+  const rows = [entry('one-off', '2026-09-07', ['Cheese sandwich'], 400)];
+  for (let d = 1; d <= 6; d++) rows.push(entry(`p${d}`, `2026-09-0${d}`, ['Porridge'], 300));
+
+  const out = collapseRepeatable(rows);
+  assert.equal(out[0].foods, 'Cheese sandwich', 'yesterday first, however rare');
+  assert.equal(out[1].uses, 6, 'the staple is still there, just below');
+});
+
+test('repeatable meals skip entries with nothing named', () => {
+  assert.deepEqual(collapseRepeatable([
+    { id: 'x', day: '2026-09-06', items: [], totals: { calories: 10 } },
+    { id: 'y', day: '', items: [{ name: 'Toast' }], totals: { calories: 10 } }
+  ]), []);
+  assert.deepEqual(collapseRepeatable(null), []);
+});
+
+test('repeatable meals respect the limit', () => {
+  const rows = Array.from({ length: 40 }, (_, i) =>
+    entry(`e${i}`, `2026-08-${String((i % 28) + 1).padStart(2, '0')}`, [`meal ${i}`], 100));
+  assert.equal(collapseRepeatable(rows, { limit: 5 }).length, 5);
 });
