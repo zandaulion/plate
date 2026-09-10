@@ -4097,12 +4097,22 @@ function initStickyDayTracker() {
   if (compactTracker) compactTracker.hidden = false;
   if (topbarSplit) topbarSplit.hidden = false;
 
-  const updateTopbarHeight = () => {
-    const h = topbar.offsetHeight || 60;
-    document.documentElement.style.setProperty('--topbar-h', `${h}px`);
+  const updateTopbarClearance = () => {
+    // The split macro bar has a negative bottom margin so it visually reaches
+    // beyond the topbar's layout box. `offsetHeight` misses that overhang and
+    // made Bitey's sticky position land behind the visible header on Android.
+    const topbarBottom = topbar.getBoundingClientRect().bottom;
+    const splitBottom = topbarSplit?.hidden ? 0 : topbarSplit?.getBoundingClientRect().bottom || 0;
+    const visibleBottom = Math.max(topbarBottom, splitBottom);
+    document.documentElement.style.setProperty('--topbar-clearance', `${Math.ceil(visibleBottom + 8)}px`);
   };
-  updateTopbarHeight();
-  window.addEventListener('resize', updateTopbarHeight);
+  updateTopbarClearance();
+  window.addEventListener('resize', updateTopbarClearance);
+  // Translated labels can wrap differently, and the header changes height when
+  // its compact tracker becomes visible. Keep the clearance in step with it.
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(updateTopbarClearance).observe(topbar);
+  }
 
   /**
    * How much height the card loses when it shrinks.

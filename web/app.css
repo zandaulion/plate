@@ -310,7 +310,10 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 
 .bitey-card {
   position: sticky;
-  top: calc(var(--topbar-h, 60px) + 6px);
+  /* The day header has a progress line which deliberately overhangs its layout
+     box. `--topbar-clearance` is measured from that visible bottom edge, so a
+     sticky Bitey card cannot tuck underneath the header on a phone. */
+  top: var(--topbar-clearance, calc(var(--topbar-h, 60px) + 8px));
   z-index: 8;
   margin: 0 0 14px;
   display: flex;
