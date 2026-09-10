@@ -1,4 +1,4 @@
-package app.plate
+package com.zandaulion.bitey
 
 import android.Manifest
 import android.content.Intent
@@ -145,6 +145,6 @@ class BarcodeScanActivity : ComponentActivity() {
     }
 
     companion object {
-        const val EXTRA_BARCODE = "app.plate.extra.BARCODE"
+        const val EXTRA_BARCODE = "com.zandaulion.bitey.extra.BARCODE"
     }
 }

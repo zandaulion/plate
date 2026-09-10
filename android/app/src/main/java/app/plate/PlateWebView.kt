@@ -1,4 +1,4 @@
-package app.plate
+package com.zandaulion.bitey
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -532,7 +532,7 @@ class PlateWebView(
             readTimeout = 10_000
             // This identifies the software, never the person or device. The
             // request goes directly from their network to Open Food Facts.
-            setRequestProperty("User-Agent", "Plate-Android/0.1.0 (anonymous device lookup)")
+            setRequestProperty("User-Agent", "Bitey-Android/1.0.0 (anonymous device lookup)")
             setRequestProperty("Accept", "application/json")
         }
         return try {

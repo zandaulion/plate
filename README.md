@@ -1,4 +1,6 @@
-# Plate
+# Bitey — Private Food Log
+
+Nutrition, privately.
 
 Photograph a meal, correct the portion, log it.
 

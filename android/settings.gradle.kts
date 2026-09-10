@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PlateAndroid"
+rootProject.name = "BiteyAndroid"
 include(":app")

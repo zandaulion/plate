@@ -1,6 +1,6 @@
 {
-  "name": "Plate",
-  "short_name": "Plate",
+  "name": "Bitey — Private Food Log",
+  "short_name": "Bitey",
   "description": "Photograph a meal, correct the portion, log it.",
   "start_url": "/",
   "scope": "/",

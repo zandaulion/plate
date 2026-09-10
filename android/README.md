@@ -1,6 +1,6 @@
-# Plate for Android
+# Bitey for Android
 
-This module is the local-first Android host for Plate. It packages the existing
+This module is the local-first Android host for Bitey. It packages the existing
 `web/` interface and `core/` calculations inside the APK and serves them from
 `https://plate.local`; it does not load the interface from the Express server.
 
@@ -18,11 +18,9 @@ Implemented local-first slices:
 4. Typed generic-food search uses the bundled SQLite table through a narrow
    native bridge; it has no network dependency.
 
-Remaining work:
-
-1. Add an explicit import/export flow for the Room diary data and locally-held
-   photo bytes.
-2. Add Firebase AI Logic only for explicit Gemini photo analysis.
+The AI photo paths are visibly marked as premium. Billing and entitlement checks
+remain a separate release milestone; the rest of the log continues to work
+locally without an account.
 
 The interface assets are synchronised automatically by the Gradle
 `syncPlateAssets` task, so UI tuning in `web/` remains the source of truth.

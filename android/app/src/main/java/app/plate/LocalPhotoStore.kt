@@ -1,4 +1,4 @@
-package app.plate
+package com.zandaulion.bitey
 
 import android.content.Context
 import android.util.Base64
