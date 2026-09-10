@@ -707,6 +707,29 @@ test('the ZIP export is a valid archive containing the data and the photos', asy
   }
 });
 
+test('the portable ZIP restores into another account with its weigh-ins and photos', async () => {
+  const source = await seedForExport();
+  await api('/api/weights', {
+    method: 'PUT', headers: source,
+    body: JSON.stringify({ day: '2026-08-12', kg: 81.4, at: '2026-08-12T07:15:00.000Z' })
+  });
+  const archive = Buffer.from(await (await api('/api/export.zip', { headers: source })).arrayBuffer());
+
+  const target = await registerDevice();
+  const restored = await api('/api/import.zip', {
+    method: 'POST', headers: { ...target.auth, 'Content-Type': 'application/zip' }, body: archive
+  });
+  assert.equal(restored.status, 200);
+  assert.deepEqual((await restored.json()).summary, { entries: 2, weights: 1, photos: 1 });
+
+  const weights = await (await api('/api/weights', { headers: target.auth })).json();
+  assert.deepEqual(weights.weights, [{ day: '2026-08-12', kg: 81.4, at: '2026-08-12T07:15:00.000Z' }]);
+  const day = await (await api('/api/entries?day=2026-08-12', { headers: target.auth })).json();
+  assert.equal(day.entries.length, 1);
+  assert.ok(day.entries[0].photoId, 'the restored entry retains its photo');
+  assert.equal((await api(`/api/photo/${day.entries[0].photoId}`, { headers: target.auth })).status, 200);
+});
+
 // ------------------------------------------------- weight & expenditure
 
 test('a weight reading is stored once per day and replaced on a repeat', async () => {

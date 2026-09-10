@@ -1,0 +1,4 @@
+<resources>
+    <!-- Deep forest lets Bitey's mint silhouette stay legible in every launcher mask. -->
+    <color name="icon_background">#18261C</color>
+</resources>

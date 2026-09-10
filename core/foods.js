@@ -440,6 +440,10 @@ export function collapseRepeatable(rows, { limit = 25 } = {}) {
       foods: names.join(', '),
       calories: Math.round(Number(row?.totals?.calories) || 0),
       photoId: row.photoId || null,
+      // The local Android adapter may attach a device-private data URL here so
+      // repeat-meal thumbnails do not fall back to a server photo endpoint.
+      photoData: row.photoData || null,
+      photoMimeType: row.photoMimeType || null,
       uses: (seen?.uses || 0) + 1
     });
   }

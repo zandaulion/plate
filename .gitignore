@@ -8,3 +8,9 @@ data/
 # to the laptop by another route.
 docs/
 tools/
+
+# Android Studio and Gradle outputs for the native, local-first client.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

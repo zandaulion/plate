@@ -40,6 +40,7 @@ import { adaptiveExpenditure } from '../core/expenditure.js';
 import { summariseUsage } from '../core/usage.js';
 import { cleanBatch, summariseEvents } from '../core/events.js';
 import { zip } from './zip.js';
+import { unzip } from './unzip.js';
 import {
   fromModelResponse, totalsOf, rangesOf, PORTION_SOURCES, portionSourceOf, hasPhotoItems,
   markEaten
@@ -1178,13 +1179,152 @@ function exportPayload(accountId) {
 
   return {
     entries,
-    weights,
     profile: profileFor(accountId),
+    weights,
     accountCreatedAt: account?.created_at ?? null
   };
 }
 
 const stamp = () => new Date().toISOString().slice(0, 10);
+
+const BACKUP_PHOTO_NAME = /^[A-Za-z0-9_.-]{1,120}\.(?:jpe?g|png)$/i;
+const BACKUP_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validate the portable PWA archive before touching an account. The Android
+ * exporter writes this same plate.json shape, so there is no platform-specific
+ * restore protocol to keep in sync.
+ */
+function readPortableBackup(bytes) {
+  const files = unzip(bytes, { maxEntryBytes: 20 * 1024 * 1024 });
+  for (const name of files.keys()) {
+    if (name === 'plate.json' || name === 'plate.csv' || name === 'plate-weights.csv' || name === 'README.txt') continue;
+    if (!name.startsWith('photos/') || !BACKUP_PHOTO_NAME.test(name.slice(7))) {
+      throw new Error('The backup contains an unsupported file.');
+    }
+  }
+
+  const raw = files.get('plate.json');
+  if (!raw) throw new Error('This ZIP does not contain a Plate backup.');
+  let manifest;
+  try { manifest = JSON.parse(raw.toString('utf8')); } catch { throw new Error('The backup description is not valid JSON.'); }
+  if (manifest?.exportVersion !== 1 || !Array.isArray(manifest.entries) || !Array.isArray(manifest.weights)) {
+    throw new Error('This backup is not compatible with this version of Plate.');
+  }
+  if (manifest.entries.length > 100_000 || manifest.weights.length > 20_000) {
+    throw new Error('The backup contains too many records.');
+  }
+
+  const photos = new Map();
+  for (const name of manifest.photos || []) {
+    if (typeof name !== 'string' || !BACKUP_PHOTO_NAME.test(name) || photos.has(name)) {
+      throw new Error('The backup has an invalid photo list.');
+    }
+    const data = files.get(`photos/${name}`);
+    if (!data || !data.length) throw new Error('A diary photo is missing from the backup.');
+    photos.set(name, data);
+  }
+
+  const entries = manifest.entries.map((source) => {
+    if (!source || typeof source !== 'object' || !BACKUP_DAY.test(source.day) || !Array.isArray(source.items) || !source.items.length) {
+      throw new Error('The backup has an invalid diary entry.');
+    }
+    const photo = source.photo ?? null;
+    if (photo !== null && (!photos.has(photo) || typeof photo !== 'string')) {
+      throw new Error('A diary photo is missing from the backup.');
+    }
+    const loggedAt = typeof source.loggedAt === 'string' && Number.isFinite(Date.parse(source.loggedAt))
+      ? source.loggedAt : nowIso();
+    const portionSource = PORTION_SOURCES.includes(source.portionSource)
+      ? source.portionSource : portionSourceOf({ portionConfirmed: source.portionConfirmed });
+    return {
+      id: crypto.randomUUID(), day: source.day,
+      meal: MEALS.includes(source.meal) ? source.meal : null,
+      createdAt: loggedAt, photo, portionSource,
+      note: typeof source.note === 'string' ? source.note.slice(0, 500) : null,
+      items: source.items, totals: totalsOf({ items: source.items, portionSource })
+    };
+  });
+
+  const byDay = new Map();
+  for (const source of manifest.weights) {
+    const day = source?.day;
+    const kg = Number(source?.kg);
+    if (!BACKUP_DAY.test(day) || !Number.isFinite(kg) || kg < 20 || kg > 400 || byDay.has(day)) {
+      throw new Error('The backup has an invalid weigh-in.');
+    }
+    const recordedAt = source.at ?? source.measuredAt;
+    const at = typeof recordedAt === 'string' && Number.isFinite(Date.parse(recordedAt))
+      ? recordedAt : `${day}T12:00:00.000Z`;
+    byDay.set(day, { day, kg, at });
+  }
+
+  const sourceProfile = manifest.profile && typeof manifest.profile === 'object' ? manifest.profile : null;
+  const numberOrNull = (value, min, max) => value === null || value === undefined || value === ''
+    ? null : (Number.isFinite(Number(value)) && Number(value) > min && Number(value) < max ? Number(value) : null);
+  const birthYear = numberOrNull(sourceProfile?.birthYear, new Date().getFullYear() - 121, new Date().getFullYear() - 12)
+    ?? (numberOrNull(sourceProfile?.ageYears, 12, 121) ? new Date().getFullYear() - Number(sourceProfile.ageYears) : null);
+  const profile = sourceProfile ? {
+    weightKg: numberOrNull(sourceProfile.weightKg, 20, 400),
+    heightCm: numberOrNull(sourceProfile.heightCm, 90, 260),
+    birthYear,
+    sex: ['male', 'female'].includes(sourceProfile.sex) ? sourceProfile.sex : null,
+    activity: ACTIVITY_LEVELS.some((level) => level.id === sourceProfile.activity) ? sourceProfile.activity : null,
+    diet: DIETS.some((diet) => diet.id === sourceProfile.diet) ? sourceProfile.diet : 'omnivore',
+    dietaryGoal: DIETARY_GOALS.some((goal) => goal.id === sourceProfile.dietaryGoal) ? sourceProfile.dietaryGoal : 'balanced'
+  } : null;
+  return { entries, weights: [...byDay.values()], profile, photos };
+}
+
+/** Replace this account only after the archive is completely valid. */
+function restorePortableBackup(accountId, deviceId, bytes) {
+  const backup = readPortableBackup(bytes);
+  const importedPhotos = new Map();
+  const createdFiles = [];
+  try {
+    for (const [oldName, data] of backup.photos) {
+      const extension = path.extname(oldName).toLowerCase() === '.png' ? '.png' : '.jpg';
+      const name = `${crypto.randomUUID()}${extension}`;
+      fs.writeFileSync(path.join(PHOTO_DIR, name), data, { flag: 'wx' });
+      createdFiles.push(name);
+      importedPhotos.set(oldName, name);
+    }
+
+    const oldPhotos = db.prepare('SELECT photo_id FROM entries WHERE account_id = ? AND photo_id IS NOT NULL')
+      .all(accountId).map((row) => row.photo_id);
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM entries WHERE account_id = ?').run(accountId);
+      db.prepare('DELETE FROM weights WHERE account_id = ?').run(accountId);
+      db.prepare('DELETE FROM profiles WHERE account_id = ?').run(accountId);
+      if (backup.profile) {
+        const p = backup.profile;
+        db.prepare(`INSERT INTO profiles (account_id, weight_kg, height_cm, birth_year, age_years, sex, activity, diet, dietary_goal, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(accountId, p.weightKg, p.heightCm, p.birthYear, ageFromBirthYear(p.birthYear), p.sex, p.activity, p.diet, p.dietaryGoal, nowIso());
+      }
+      const insertWeight = db.prepare('INSERT INTO weights (id, account_id, day, kg, measured_at, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+      backup.weights.forEach((weight) => insertWeight.run(crypto.randomUUID(), accountId, weight.day, weight.kg, weight.at, nowIso()));
+      const insertEntry = db.prepare(`INSERT INTO entries (id, account_id, device_id, day, meal, created_at, photo_id, note, portion_confirmed, portion_source, items_json, totals_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      backup.entries.forEach((entry) => insertEntry.run(
+        entry.id, accountId, deviceId, entry.day, entry.meal, entry.createdAt,
+        entry.photo ? importedPhotos.get(entry.photo) : null, entry.note,
+        entry.portionSource === 'model' ? 0 : 1, entry.portionSource,
+        JSON.stringify(entry.items), JSON.stringify(entry.totals)
+      ));
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    oldPhotos.forEach((name) => { try { fs.unlinkSync(path.join(PHOTO_DIR, path.basename(name))); } catch {} });
+    return { entries: backup.entries.length, weights: backup.weights.length, photos: backup.photos.size };
+  } catch (error) {
+    createdFiles.forEach((name) => { try { fs.unlinkSync(path.join(PHOTO_DIR, name)); } catch {} });
+    throw error;
+  }
+}
 
 function attach(res, filename, type) {
   res.type(type);
@@ -1240,6 +1380,18 @@ app.get('/api/export.zip', requireDevice, (req, res) => {
   attach(res, `plate-${stamp()}.zip`, 'application/zip');
   res.send(zip(files));
 });
+
+app.post('/api/import.zip', requireDevice,
+  express.raw({ type: ['application/zip', 'application/x-zip-compressed'], limit: '260mb' }),
+  (req, res) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || !req.body.length) throw new Error('Choose a Plate ZIP backup first.');
+      res.json({ ok: true, summary: restorePortableBackup(req.device.account_id, req.device.id, req.body) });
+    } catch (error) {
+      res.status(400).json({ error: 'invalid_backup', message: error.message || 'The backup could not be restored.' });
+    }
+  }
+);
 
 // ----------------------------------------------------------------- admin
 

@@ -1,0 +1,8 @@
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:inset="18dp">
+    <!-- Adaptive launchers crop the outer 18dp while animating the icon.
+         Keep the complete PWA composition inside that safe zone. -->
+    <bitmap
+        android:src="@drawable/ic_launcher_pwa"
+        android:gravity="fill" />
+</inset>

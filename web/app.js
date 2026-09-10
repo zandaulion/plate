@@ -8,7 +8,7 @@ import {
   totalsOf, rangesOf, setTotalGrams, setItemGrams, removeItem, itemMacros,
   addManualItem, hasPhotoItems, markWeighed, portionSourceOf, markEaten, ateFraction
 } from '/core/analysis/estimate.js';
-import { toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
+import { fromOpenFoodFacts, toItem, isPlausible, QUICK_BITES, createQuickBiteItem, getGrazingSuggestions } from '/core/foods.js';
 import { macroAgreement, ageFromBirthYear } from '/core/nutrition.js';
 import { readTakenOn } from '/core/exif.js';
 import { localDayKey } from '/core/day.js';
@@ -20,6 +20,7 @@ import {
   t, plural, load as loadLocale, setLocale, locale, applyToDom,
   LOCALES, LOCALE_NAMES
 } from '/i18n.js';
+import { localApi, LocalApiError } from '/local-api.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -47,6 +48,14 @@ const state = {
 // -------------------------------------------------------------------- api
 
 async function api(path, options = {}) {
+  if (window.__PLATE_NATIVE__) {
+    try {
+      return await localApi(path, options);
+    } catch (err) {
+      if (err instanceof LocalApiError) throw err;
+      throw new LocalApiError('The local diary could not be opened.', { status: 503 });
+    }
+  }
   const res = await fetch(path, {
     ...options,
     // Sent on every call so the server never has to guess: it decides what
@@ -415,6 +424,25 @@ function getFoodEmoji(name = '') {
   return '🍏';
 }
 
+/**
+ * Android keeps an entry photograph in the private local database. The web
+ * server still exposes the old authenticated photo route, so the same view
+ * works in both hosts without ever making the Android build ask for a server.
+ */
+function photoSource(entry) {
+  if (entry?.photoData) {
+    const mime = entry.photoMimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+    return `data:${mime};base64,${entry.photoData}`;
+  }
+  if (window.__PLATE_NATIVE__ && entry?.photoId) {
+    // Served by the Android asset client from app-private storage. It looks
+    // like a normal same-origin image to the established PWA interface but
+    // cannot leave the device or fall back to a server route.
+    return `/local-photo/${encodeURIComponent(entry.photoId)}`;
+  }
+  return entry?.photoId ? `/api/photo/${encodeURIComponent(entry.photoId)}` : null;
+}
+
 function renderEntries(entries) {
   const list = $('entries');
   // Kept so a tap can reopen the entry in the editor without another request.
@@ -426,8 +454,9 @@ function renderEntries(entries) {
     const firstBarcode = e.items.find((i) => i.barcode)?.barcode;
 
     let thumb;
-    if (e.photoId) {
-      thumb = `<img src="/api/photo/${encodeURIComponent(e.photoId)}" alt="" loading="lazy">`;
+    const photo = photoSource(e);
+    if (photo) {
+      thumb = `<img src="${esc(photo)}" alt="" loading="lazy">`;
     } else if (firstBarcode) {
       thumb = `<img src="/api/barcode/${encodeURIComponent(firstBarcode)}/image" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'noimg food-emoji\\' aria-hidden=\\'true\\'>${getFoodEmoji(foods)}</div>'">`;
     } else {
@@ -1362,7 +1391,10 @@ function initDaySwipe() {
       isIgnored = true;
       return;
     }
-    if (e.target.closest('.quick-bite-scroll, input, textarea, select')) {
+    // The bottom bar owns its taps. Letting a day swipe begin on one of its
+    // buttons puts it into :active (the apparent "minimise"), then changes the
+    // day with the same finger. Navigation starts in the day view instead.
+    if (e.target.closest('.quick-bite-scroll, .actions, input, textarea, select')) {
       isIgnored = true;
       return;
     }
@@ -1799,8 +1831,9 @@ function renderRepeat(meals) {
   }
 
   list.innerHTML = meals.map((m) => {
-    const thumb = m.photoId
-      ? `<img src="/api/photo/${encodeURIComponent(m.photoId)}" alt="" loading="lazy">`
+    const source = photoSource(m);
+    const thumb = source
+      ? `<img src="${esc(source)}" alt="" loading="lazy">`
       : `<div class="noimg food-emoji" aria-hidden="true">${getFoodEmoji(m.foods)}</div>`;
     // A bare numeral: how many times it was eaten needs no translation, and
     // spelling it out would crowd a line that is mostly food names.
@@ -2275,8 +2308,9 @@ function openReview(mode, entry = null) {
   }
 
   const photoEl = $('review-photo');
-  if (entry?.photoId) {
-    photoEl.src = `/api/photo/${encodeURIComponent(entry.photoId)}`;
+  const photo = photoSource(entry);
+  if (photo) {
+    photoEl.src = photo;
     photoEl.hidden = false;
   } else {
     photoEl.removeAttribute('src');
@@ -3123,6 +3157,52 @@ $('m-add').addEventListener('click', () => {
   toast(t('Added {0}', parsed.name));
 });
 
+const OFF_ALWAYS_ALLOW_STORAGE_KEY = 'plate.openFoodFacts.alwaysAllow';
+let barcodeConsentResolve = null;
+
+function alwaysAllowOpenFoodFacts() {
+  try { return localStorage.getItem(OFF_ALWAYS_ALLOW_STORAGE_KEY) === 'true'; } catch { return false; }
+}
+
+function setAlwaysAllowOpenFoodFacts(enabled) {
+  try { localStorage.setItem(OFF_ALWAYS_ALLOW_STORAGE_KEY, String(enabled)); } catch { /* storage unavailable: ask next time */ }
+}
+
+function syncAlwaysAllowOpenFoodFactsToggle() {
+  const toggle = $('off-always-allow');
+  if (!toggle) return;
+  toggle.checked = alwaysAllowOpenFoodFacts();
+  toggle.setAttribute('aria-checked', String(toggle.checked));
+}
+
+function finishBarcodeConsent(allowed) {
+  if (!barcodeConsentResolve) return;
+  const resolve = barcodeConsentResolve;
+  barcodeConsentResolve = null;
+  const always = $('barcode-consent-always').checked;
+  $('barcode-consent').hidden = true;
+  if (allowed && always) {
+    setAlwaysAllowOpenFoodFacts(true);
+    syncAlwaysAllowOpenFoodFactsToggle();
+  }
+  resolve(allowed);
+}
+
+function requestOpenFoodFactsConsent() {
+  const dialog = $('barcode-consent');
+  const always = $('barcode-consent-always');
+  always.checked = false;
+  always.setAttribute('aria-checked', 'false');
+  dialog.hidden = false;
+  return new Promise((resolve) => { barcodeConsentResolve = resolve; });
+}
+
+$('barcode-consent-cancel').addEventListener('click', () => finishBarcodeConsent(false));
+$('barcode-consent-allow').addEventListener('click', () => finishBarcodeConsent(true));
+$('barcode-consent-always').addEventListener('change', (event) => {
+  event.currentTarget.setAttribute('aria-checked', String(event.currentTarget.checked));
+});
+
 async function lookupBarcode(code) {
   $('finder-hint').textContent = t('Looking up…');
   try {
@@ -3130,8 +3210,60 @@ async function lookupBarcode(code) {
     $('finder-hint').textContent = '';
     addFood(food);
   } catch (err) {
-    $('finder-hint').textContent = err.message;
+    if (!window.__PLATE_NATIVE__ || err.code !== 'not_found') {
+      $('finder-hint').textContent = err.message;
+      return;
+    }
+
+    // Cache misses are the only time Plate contacts Open Food Facts. The
+    // setting remains opt-in and device-local; without it, each lookup keeps
+    // the original explicit consent prompt.
+    const allowed = alwaysAllowOpenFoodFacts() || await requestOpenFoodFactsConsent();
+    if (!allowed) {
+      $('finder-hint').textContent = 'No lookup was made. You can enter the nutrition details manually.';
+      return;
+    }
+
+    try {
+      const food = await lookupOpenFoodFactsOnDevice(code);
+      await api(`/api/foods/barcode/${encodeURIComponent(code)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ food }),
+      });
+      $('finder-hint').textContent = '';
+      addFood(food);
+    } catch (lookupError) {
+      $('finder-hint').textContent = lookupError.message;
+    }
   }
+}
+
+async function lookupOpenFoodFactsOnDevice(code) {
+  if (typeof window.PlateNative?.lookupOpenFoodFacts !== 'function') {
+    throw new LocalApiError('The direct barcode lookup is not available in this build.', { status: 503 });
+  }
+  const response = await new Promise((resolve) => {
+    window.__plateNativeOpenFoodFactsResult = (payload) => {
+      delete window.__plateNativeOpenFoodFactsResult;
+      try { resolve(JSON.parse(payload)); } catch {
+        resolve({ ok: false, message: 'The Open Food Facts response could not be read.' });
+      }
+    };
+    window.PlateNative.lookupOpenFoodFacts(code);
+  });
+  if (!response.ok) {
+    throw new LocalApiError(response.message || 'Open Food Facts could not answer right now.', {
+      code: response.code || 'network_error',
+      status: response.code === 'not_found' ? 404 : 503,
+    });
+  }
+  const food = fromOpenFoodFacts(response.product, locale());
+  if (!food) {
+    throw new LocalApiError('That product has no usable nutrition details. Enter it manually instead.', {
+      code: 'no_nutrition', status: 422,
+    });
+  }
+  return food;
 }
 
 /**
@@ -3141,6 +3273,18 @@ async function lookupBarcode(code) {
  */
 async function startScan() {
   track('scan_start');
+  if (window.__PLATE_NATIVE__ && typeof window.PlateNative?.scanBarcode === 'function') {
+    const code = await new Promise((resolve) => {
+      window.__plateNativeBarcodeResult = (value) => {
+        delete window.__plateNativeBarcodeResult;
+        resolve(value || null);
+      };
+      window.PlateNative.scanBarcode();
+    });
+    if (code) lookupBarcode(code.trim());
+    return;
+  }
+
   if (!('BarcodeDetector' in window)) {
     track('scan_typed', { reason: 'no_detector' });
     const typed = prompt('Type the barcode number:');
@@ -3453,6 +3597,18 @@ function showMaintenanceResult(m, usedKg) {
 function renderLanguageChoice() {
   const host = $('language-choice');
   if (!host) return;
+  const switcher = $('language-switcher');
+  const value = $('language-switcher-value');
+  if (value) value.textContent = LOCALE_NAMES[locale()];
+
+  if (switcher && !switcher.dataset.bound) {
+    switcher.dataset.bound = 'true';
+    switcher.addEventListener('click', () => {
+      const isOpen = switcher.getAttribute('aria-expanded') === 'true';
+      switcher.setAttribute('aria-expanded', String(!isOpen));
+      host.hidden = isOpen;
+    });
+  }
 
   host.innerHTML = LOCALES.map((code) => `
     <button class="chip" type="button" data-locale="${esc(code)}"
@@ -3465,7 +3621,10 @@ function renderLanguageChoice() {
       await setLocale(next);
       track('language_changed', { locale: next });
       applyToDom();
+      syncNativeActionLabels();
       renderLanguageChoice();
+      host.hidden = true;
+      switcher?.setAttribute('aria-expanded', 'false');
       // The parts drawn from state, not from markup.
       setGateMode(gateMode);
       renderRecoveryState();
@@ -3493,15 +3652,126 @@ $('profile').addEventListener('click', (ev) => { if (ev.target === $('profile'))
 
 /** How the app is set up: devices, your data, getting back in. */
 $('open-settings').addEventListener('click', () => {
-  loadDevices();
-  renderRecoveryState();
-  $('code-box').hidden = true;
+  if (!window.__PLATE_NATIVE__) {
+    loadDevices();
+    renderRecoveryState();
+    $('code-box').hidden = true;
+  }
   const close = screen('settings');
   $('settings').hidden = false;
   openScreen('settings', () => { close(); $('settings').hidden = true; });
 });
 $('settings-close').addEventListener('click', closeSettings);
 $('settings').addEventListener('click', (ev) => { if (ev.target === $('settings')) closeSettings(); });
+
+// Android owns the file picker and ZIP stream. The page only asks for the
+// deliberate action and receives a compact completion result, never a path or
+// any broad filesystem capability.
+const backupWaiters = new Map();
+window.__plateNativeBackupResult = (operation, payload) => {
+  const resolve = backupWaiters.get(operation);
+  if (!resolve) return;
+  backupWaiters.delete(operation);
+  try { resolve(JSON.parse(payload)); } catch {
+    resolve({ ok: false, code: 'backup_error', message: 'The backup result could not be read.' });
+  }
+};
+
+async function nativeBackup(operation) {
+  if (typeof window.PlateNative?.[operation === 'export' ? 'exportBackup' : 'importBackup'] !== 'function') {
+    throw new LocalApiError('Backup is not available in this build.', { status: 503 });
+  }
+  const result = await new Promise((resolve) => {
+    backupWaiters.set(operation, resolve);
+    if (operation === 'export') window.PlateNative.exportBackup();
+    else window.PlateNative.importBackup();
+  });
+  if (!result.ok && result.code !== 'cancelled') {
+    throw new LocalApiError(result.message || 'The backup could not be completed.', { code: result.code || 'backup_error', status: 503 });
+  }
+  return result;
+}
+
+if (window.__PLATE_NATIVE__) {
+  $('server-device-controls').hidden = true;
+  $('server-data-heading').hidden = true;
+  $('server-data-copy').hidden = true;
+  $('server-recovery-controls').hidden = true;
+  $('server-settings-footer').hidden = true;
+  $('native-data-heading').hidden = false;
+  $('native-data-copy').hidden = false;
+  $('server-export-actions').hidden = true;
+  $('native-backup-actions').hidden = false;
+  $('native-barcode-privacy').hidden = false;
+
+  const alwaysAllowToggle = $('off-always-allow');
+  syncAlwaysAllowOpenFoodFactsToggle();
+  alwaysAllowToggle.addEventListener('change', () => {
+    setAlwaysAllowOpenFoodFacts(alwaysAllowToggle.checked);
+    alwaysAllowToggle.setAttribute('aria-checked', String(alwaysAllowToggle.checked));
+  });
+
+  $('backup-export').addEventListener('click', async () => {
+    $('backup-export').disabled = true;
+    try {
+      const result = await nativeBackup('export');
+      if (result.ok) toast(`Backup saved (${result.summary.entries} entries, ${result.summary.photos} photos).`);
+    } catch (err) {
+      toast(err.message || 'Could not save the backup.');
+    } finally {
+      $('backup-export').disabled = false;
+    }
+  });
+
+  $('backup-import').addEventListener('click', async () => {
+    if (!confirm('Restore this backup? It will replace the diary, weigh-ins, cached foods, and photos currently stored on this device.')) return;
+    $('backup-import').disabled = true;
+    try {
+      const result = await nativeBackup('import');
+      if (!result.ok) return;
+      state.me = await api('/api/me');
+      await loadDay();
+      toast(`Backup restored (${result.summary.entries} entries, ${result.summary.photos} photos).`);
+    } catch (err) {
+      toast(err.message || 'Could not restore the backup.');
+    } finally {
+      $('backup-import').disabled = false;
+    }
+  });
+}
+
+// The hosted PWA uses the same portable ZIP as Android. The browser merely
+// selects the file; the authenticated restore is explicit and server-side.
+if (!window.__PLATE_NATIVE__) {
+  const importButton = $('pwa-backup-import');
+  const importFile = $('pwa-backup-file');
+  importButton.addEventListener('click', () => importFile.click());
+  importFile.addEventListener('change', async () => {
+    const file = importFile.files?.[0];
+    importFile.value = '';
+    if (!file) return;
+    if (!confirm('Restore this backup? It will replace the diary, weigh-ins, and photos currently stored in this account.')) return;
+    importButton.disabled = true;
+    try {
+      const result = await api('/api/import.zip', {
+        method: 'POST', body: file,
+        headers: { 'Content-Type': 'application/zip' }
+      });
+      state.me = await api('/api/me');
+      await loadDay();
+      toast(`Backup restored (${result.summary.entries} entries, ${result.summary.photos} photos).`);
+    } catch (err) {
+      toast(err.message || 'Could not restore the backup.');
+    } finally {
+      importButton.disabled = false;
+    }
+  });
+}
+
+/** Keep Android's stable native action bar in the same language as the page. */
+function syncNativeActionLabels() {
+  window.PlateNative?.setPrimaryActionLabels?.(t('Manual'), t('Barcode'), t('Photo'));
+}
 
 $('profile-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -3940,7 +4210,9 @@ async function start() {
   state.me = await api('/api/me');
   // The server decides. Nothing is collected until it says so.
   startTracking(state.me.trackingEnabled);
-  if (!state.me.analysisConfigured) toast(t('Photo analysis is not configured on this server.'));
+  if (!state.me.analysisConfigured && !window.__PLATE_NATIVE__) {
+    toast(t('Photo analysis is not configured on this server.'));
+  }
   await loadDay();
   await collectSharedPhoto();
   handleUrlActions();
@@ -4061,6 +4333,7 @@ function inviteFromUrl() {
   // start() ever returns.
   await loadLocale();
   applyToDom();
+  syncNativeActionLabels();
   renderLanguageChoice();
 
   const invited = inviteFromUrl();
@@ -4084,14 +4357,18 @@ function inviteFromUrl() {
   }
 })();
 
-installUpdates({
-  appName: 'Plate',
-  toast: (message) => toast(message),
-  // A photo estimate on screen means unsaved work: a correction typed in, a
-  // weight adjusted. Reloading through that would lose it, so the update waits
-  // until the sheet is done with.
-  isBusy: () => Boolean(state.estimate) && screenIsOpen('review')
-});
+// The Android build is updated through the APK, so it must not register the
+// browser worker that tries to refresh assets from a server.
+if (!window.__PLATE_NATIVE__) {
+  installUpdates({
+    appName: 'Plate',
+    toast: (message) => toast(message),
+    // A photo estimate on screen means unsaved work: a correction typed in, a
+    // weight adjusted. Reloading through that would lose it, so the update waits
+    // until the sheet is done with.
+    isBusy: () => Boolean(state.estimate) && screenIsOpen('review')
+  });
+}
 
 // The day is refetched when the app comes back to the foreground; the update
 // check that used to live here now belongs to installUpdates.

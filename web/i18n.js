@@ -1,20 +1,33 @@
 /**
  * Plate — interface language.
  *
- * The English string is the key. With two languages that keeps call sites
+ * The English string is the key. Keeping it as the key makes call sites
  * readable (`t('Save this recovery code')` says what it renders) and means
  * English needs no catalogue at all: a missing translation falls through to
  * the key, which is already the correct English. The cost is that rewording
- * English orphans a translation, so `npm run i18n:check` lists keys the
- * Romanian catalogue no longer covers.
+ * English orphans a translation, so `npm run i18n:check` lists every bundled
+ * catalogue key that no longer matches.
  *
  * Placeholders are {0}, {1} — positional, because Romanian reorders clauses
  * and a translator must be free to move them.
  */
 'use strict';
 
-export const LOCALES = ['en', 'ro'];
-export const LOCALE_NAMES = { en: 'English', ro: 'Română' };
+export const LOCALES = ['en', 'ar', 'zh', 'fr', 'de', 'hi', 'ja', 'ko', 'pt', 'ro', 'es', 'uk'];
+export const LOCALE_NAMES = {
+  en: 'English',
+  ar: 'العربية',
+  zh: '中文',
+  fr: 'Français',
+  de: 'Deutsch',
+  hi: 'हिन्दी',
+  ja: '日本語',
+  ko: '한국어',
+  pt: 'Português',
+  ro: 'Română',
+  es: 'Español',
+  uk: 'Українська'
+};
 const STORAGE_KEY = 'plate-locale';
 
 let strings = {};
@@ -45,7 +58,11 @@ export async function load(locale) {
       strings = {};
     }
   }
+  // Set direction at the document root so Arabic layouts, keyboard focus and
+  // punctuation all follow the reader's direction. Every other locale stays
+  // explicitly LTR after a user changes away from Arabic.
   document.documentElement.lang = current;
+  document.documentElement.dir = current === 'ar' ? 'rtl' : 'ltr';
   return current;
 }
 
@@ -71,9 +88,8 @@ export function t(key, ...args) {
 }
 
 /**
- * Romanian has three plural forms where English has two, and the boundary is
- * not a count you can hard-code: 1 book, 5 books, but 21 de books. Intl knows
- * the rule, so the catalogue supplies one form per category and Intl picks.
+ * Languages use different plural categories. Intl owns the grammar rule, so a
+ * catalogue supplies the forms it has and the renderer chooses the right one.
  */
 export function plural(key, n, ...args) {
   const forms = strings[key];

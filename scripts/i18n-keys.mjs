@@ -3,9 +3,11 @@
  *
  * The English text is the key, so there is no separate en.json to drift out of
  * step -- this walks the sources instead and is the single answer to "what
- * needs translating". `npm run i18n:check` diffs it against ro.json.
+ * needs translating". `npm run i18n:check` diffs it against every bundled
+ * non-English catalogue.
  */
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 
@@ -102,16 +104,27 @@ export function allKeys() {
   return [...new Set(keys)].sort((a, b) => a.localeCompare(b));
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+const CATALOGUE_LOCALES = ['ar', 'zh', 'fr', 'de', 'hi', 'ja', 'ko', 'pt', 'ro', 'es', 'uk'];
+
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const keys = allKeys();
   if (process.argv.includes('--check')) {
-    const ro = JSON.parse(read('web/i18n/ro.json'));
-    const missing = keys.filter((k) => !(k in ro));
-    const orphan = Object.keys(ro).filter((k) => !keys.includes(k));
-    if (missing.length) console.log(`missing ${missing.length}:\n` + missing.map((k) => '  ' + k).join('\n'));
-    if (orphan.length) console.log(`orphaned ${orphan.length}:\n` + orphan.map((k) => '  ' + k).join('\n'));
-    if (!missing.length && !orphan.length) console.log(`ro.json covers all ${keys.length} keys.`);
-    process.exit(missing.length || orphan.length ? 1 : 0);
+    let errors = 0;
+    for (const locale of CATALOGUE_LOCALES) {
+      const catalogue = JSON.parse(read(`web/i18n/${locale}.json`));
+      const missing = keys.filter((key) => !(key in catalogue));
+      const orphan = Object.keys(catalogue).filter((key) => !keys.includes(key));
+      if (missing.length) {
+        errors += missing.length;
+        console.log(`${locale}.json missing ${missing.length}:\n` + missing.map((key) => '  ' + key).join('\n'));
+      }
+      if (orphan.length) {
+        errors += orphan.length;
+        console.log(`${locale}.json orphaned ${orphan.length}:\n` + orphan.map((key) => '  ' + key).join('\n'));
+      }
+      if (!missing.length && !orphan.length) console.log(`${locale}.json covers all ${keys.length} keys.`);
+    }
+    process.exit(errors ? 1 : 0);
   }
   console.log(JSON.stringify(keys, null, 1));
 }

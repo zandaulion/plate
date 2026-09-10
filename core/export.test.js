@@ -21,10 +21,16 @@ const ENTRIES = [
 ];
 
 test('JSON export carries everything needed to reconstruct the log', () => {
-  const out = toJson({ entries: ENTRIES, profile: { weightKg: 80 }, accountCreatedAt: '2026-08-01T00:00:00Z' });
+  const out = toJson({
+    entries: ENTRIES,
+    profile: { weightKg: 80 },
+    weights: [{ day: '2026-08-02', kg: 79.6, measuredAt: '2026-08-02T07:00:00Z' }],
+    accountCreatedAt: '2026-08-01T00:00:00Z'
+  });
   assert.equal(out.exportVersion, EXPORT_VERSION);
   assert.equal(out.entryCount, 2);
   assert.equal(out.profile.weightKg, 80);
+  assert.deepEqual(out.weights, [{ day: '2026-08-02', kg: 79.6, measuredAt: '2026-08-02T07:00:00Z' }]);
 
   const e = out.entries[0];
   assert.equal(e.portionSource, 'weighed');

@@ -950,6 +950,14 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
 }
+/* WebView can briefly drop a fixed backdrop-filter layer while the deck uses
+   3D transforms. Android gets the visually equivalent solid surface on its
+   own compositor layer, so day swipes never flash the action bar. */
+:root[data-host="android"] .actions {
+  /* Android presents these same three actions in a native overlay. Keeping
+     that overlay outside WebView is what lets the PWA retain 3D day cards. */
+  display: none;
+}
 .action {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 10px 4px 8px; border: 1px solid var(--line); border-radius: 16px;
@@ -1098,6 +1106,16 @@ input[type="range"]::-moz-range-thumb {
   color: var(--ink-3); font-weight: 650; padding: 0 0 8px;
 }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.language-switcher {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 15px; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--surface); color: var(--ink);
+  font: inherit; font-weight: 600; text-align: start;
+}
+.language-switcher-value { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); font-weight: 500; }
+.language-switcher[aria-expanded="true"] { border-color: var(--accent); }
+.language-choice { margin-top: 10px; }
+.language-choice[hidden] { display: none; }
 .chip {
   border: 1px solid var(--line); background: var(--surface);
   border-radius: 99px; padding: 9px 15px; font-size: .9rem; color: var(--ink-2);
@@ -1154,6 +1172,29 @@ input[type="range"]::-moz-range-thumb {
 .wait-card p { font-size: 1.05rem; line-height: 1.45; margin: 0; }
 .wait-card .primary { width: 100%; }
 .wait.err .wait-card p { color: var(--danger); }
+
+/* Direct network consent is a choice, not a browser alert. The card is kept
+   compact enough that the switch and both outcomes remain visible on phones. */
+.consent {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  padding: 24px; background: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+/* Arabic is the only right-to-left locale we ship. Keep quantities and
+   chart axes legible while the surrounding interface follows RTL reading. */
+:root[dir="rtl"] .language-switcher-value,
+:root[dir="rtl"] input[type="number"],
+:root[dir="rtl"] .chart,
+:root[dir="rtl"] .macro-num { direction: ltr; }
+.consent-card {
+  width: min(100%, 390px); padding: 22px; border-radius: 18px;
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow);
+}
+.consent-card h2 { margin: 0 0 10px; font-size: 1.18rem; }
+.consent-card > p { margin: 0 0 16px; color: var(--ink-2); line-height: 1.45; }
+.consent-toggle { margin: 0; text-align: left; }
+.consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.consent-actions button { min-height: 46px; }
 
 /* Large, and on its own line: it carries the whole sense of "something is
    happening" now. */
@@ -1324,6 +1365,31 @@ input[type="range"]::-moz-range-thumb {
 .export-row a.secondary {
   display: block; text-align: center; text-decoration: none; color: var(--ink);
 }
+
+/* This is consent, not a hidden preference: it explains the precise network
+   disclosure beside the switch and is deliberately scoped to Android. */
+.native-privacy { margin-top: 24px; }
+.privacy-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); cursor: pointer;
+}
+.privacy-toggle span { min-width: 0; display: grid; gap: 4px; }
+.privacy-toggle strong { font-size: .92rem; color: var(--ink); }
+.privacy-toggle small { color: var(--ink-3); font-size: .78rem; line-height: 1.4; }
+.privacy-toggle input {
+  appearance: none; flex: 0 0 auto; width: 46px; height: 28px; margin: 0;
+  padding: 3px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--sunken); cursor: pointer; transition: background .16s ease, border-color .16s ease;
+}
+.privacy-toggle input::after {
+  content: ''; display: block; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--surface); box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 25%, transparent);
+  transition: transform .16s ease;
+}
+.privacy-toggle input:checked { background: var(--accent); border-color: var(--accent); }
+.privacy-toggle input:checked::after { transform: translateX(18px); }
+.privacy-toggle input:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
 
 
 /* -------------------------------------------------------- weight & burn */

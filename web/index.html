@@ -9,6 +9,12 @@
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/icon.svg">
 <link rel="stylesheet" href="/app.css">
+<script>
+  // Android injects this interface before this document executes. A browser
+  // install has no such object and keeps using the existing HTTP API.
+  window.__PLATE_NATIVE__ = Boolean(window.PlateNative?.isLocalBuild?.());
+  if (window.__PLATE_NATIVE__) document.documentElement.dataset.host = 'android';
+</script>
 </head>
 <body>
 
@@ -482,34 +488,72 @@
       <div id="settings-body">
       <section class="devices-block">
         <h3 class="section-head" data-i18n="Language">Language</h3>
-        <div id="language-choice" class="chips" role="group"
+        <button id="language-switcher" class="language-switcher" type="button"
+                aria-expanded="false" aria-controls="language-choice">
+          <span data-i18n="App language">App language</span>
+          <span class="language-switcher-value">
+            <span id="language-switcher-value">English</span><span aria-hidden="true">⌄</span>
+          </span>
+        </button>
+        <div id="language-choice" class="chips language-choice" role="group" hidden
              aria-label="Language" data-i18n-label="Language"><!-- Rendered by JS --></div>
 
-        <h3 class="section-head" data-i18n="Your devices">Your devices</h3>
-        <ul id="device-list" class="devices"></ul>
-        <button id="link-device" class="secondary" type="button" data-i18n="Add another device">Add another device</button>
+        <!-- These routes exist only for the hosted PWA account model. The
+             Android host deliberately has no account, shared device list, or
+             recovery code. -->
+        <div id="server-device-controls">
+          <h3 class="section-head" data-i18n="Your devices">Your devices</h3>
+          <ul id="device-list" class="devices"></ul>
+          <button id="link-device" class="secondary" type="button" data-i18n="Add another device">Add another device</button>
 
-        <div id="code-box" class="code-box" hidden>
-          <p class="code-label" id="code-title"></p>
-          <output class="code-value" id="code-value"></output>
-          <p class="hint" id="code-hint"></p>
+          <div id="code-box" class="code-box" hidden>
+            <p class="code-label" id="code-title"></p>
+            <output class="code-value" id="code-value"></output>
+            <p class="hint" id="code-hint"></p>
+          </div>
         </div>
 
-        <h3 class="section-head" data-i18n="Your data">Your data</h3>
-        <p class="hint" data-i18n="Everything this account holds, with nothing withheld and no account needed to read it back.">Everything this account holds, with nothing withheld and no account needed to read it back.</p>
-        <div class="export-row">
+        <h3 id="server-data-heading" class="section-head" data-i18n="Your data">Your data</h3>
+        <h3 id="native-data-heading" class="section-head" hidden data-i18n="On this device">On this device</h3>
+        <p id="server-data-copy" class="hint" data-i18n="Everything this account holds, with nothing withheld and no account needed to read it back.">Everything this account holds, with nothing withheld and no account needed to read it back.</p>
+        <p id="native-data-copy" class="hint" hidden data-i18n="Your diary, photos, weight history, and cached foods stay on this device. Back up regularly if you want to move or recover them.">Your diary, photos, weight history, and cached foods stay on this device. Back up regularly if you want to move or recover them.</p>
+        <div id="server-export-actions" class="export-row">
           <a class="secondary" href="/api/export.zip" download data-i18n="Everything, with photos">Everything, with photos</a>
           <a class="secondary" href="/api/export.csv" download data-i18n="Spreadsheet (CSV)">Spreadsheet (CSV)</a>
           <a class="secondary" href="/api/export.json" download>JSON</a>
+          <button id="pwa-backup-import" class="secondary" type="button" data-i18n="Restore from a backup">Restore from a backup</button>
+          <input id="pwa-backup-file" type="file" accept="application/zip,application/x-zip-compressed,.zip" hidden>
+        </div>
+        <div id="native-backup-actions" class="export-row" hidden>
+          <p class="hint">Your backup includes diary entries, weigh-ins, cached barcode foods, and photos. Keep it somewhere private.</p>
+          <button id="backup-export" class="secondary" type="button">Everything, with photos</button>
+          <button id="backup-import" class="secondary" type="button">Restore from a backup</button>
         </div>
 
-        <h3 class="section-head" data-i18n="Recovery">Recovery</h3>
-        <p class="hint" id="recovery-state"></p>
-        <button id="recovery-btn" class="secondary" type="button">Create a recovery code</button>
+        <!-- Android-only: the browser keeps its existing per-request consent.
+             This puts a standing choice in reach rather than surprising the
+             person with a network request after they have forgotten about it. -->
+        <section id="native-barcode-privacy" class="native-privacy" hidden>
+          <h3 class="section-head" data-i18n="Barcode lookups">Barcode lookups</h3>
+          <label class="privacy-toggle" for="off-always-allow">
+            <span>
+              <strong data-i18n="Always allow Open Food Facts lookups">Always allow Open Food Facts lookups</strong>
+              <small data-i18n="New barcodes are sent directly to Open Food Facts. They receive your IP address and barcode; successful nutrition details are stored only on this device. Turn this off at any time.">New barcodes are sent directly to Open Food Facts. They receive your IP address and barcode; successful nutrition details are stored only on this device. Turn this off at any time.</small>
+            </span>
+            <input id="off-always-allow" type="checkbox" role="switch"
+                   aria-label="Always allow Open Food Facts lookups" data-i18n-label="Always allow Open Food Facts lookups">
+          </label>
+        </section>
+
+        <div id="server-recovery-controls">
+          <h3 class="section-head" data-i18n="Recovery">Recovery</h3>
+          <p class="hint" id="recovery-state"></p>
+          <button id="recovery-btn" class="secondary" type="button">Create a recovery code</button>
+        </div>
       </section>
       </div>
 
-      <footer class="sheet-foot muted-foot">
+      <footer id="server-settings-footer" class="sheet-foot muted-foot">
         <button id="logout" class="text-btn" type="button" data-i18n="Sign this device out">Sign this device out</button>
       </footer>
     </div>
@@ -527,6 +571,27 @@
     <div id="wait-spin" class="wait-spin" aria-hidden="true"></div>
     <p id="wait-msg"></p>
     <button id="wait-ok" class="primary" type="button" hidden data-i18n="OK">OK</button>
+  </div>
+</div>
+
+<!-- A native-looking consent card rather than window.confirm(), because the
+     person needs a visible, reversible choice for future barcode lookups. -->
+<div id="barcode-consent" class="consent" hidden role="dialog" aria-modal="true" aria-labelledby="barcode-consent-heading">
+  <div class="consent-card">
+    <h2 id="barcode-consent-heading" data-i18n="Look up this barcode?">Look up this barcode?</h2>
+    <p data-i18n="This barcode is not stored on this device. Open Food Facts will receive your IP address and this barcode. If found, its nutrition details will be saved only on this device.">This barcode is not stored on this device. Open Food Facts will receive your IP address and this barcode. If found, its nutrition details will be saved only on this device.</p>
+    <label class="privacy-toggle consent-toggle" for="barcode-consent-always">
+      <span>
+        <strong data-i18n="Always allow future lookups">Always allow future lookups</strong>
+        <small data-i18n="Skip this question for new barcodes. You can change this in Settings at any time.">Skip this question for new barcodes. You can change this in Settings at any time.</small>
+      </span>
+      <input id="barcode-consent-always" type="checkbox" role="switch"
+             aria-label="Always allow future lookups" data-i18n-label="Always allow future lookups">
+    </label>
+    <div class="consent-actions">
+      <button id="barcode-consent-cancel" class="secondary" type="button" data-i18n="Not now">Not now</button>
+      <button id="barcode-consent-allow" class="primary" type="button" data-i18n="Allow lookup">Allow lookup</button>
+    </div>
   </div>
 </div>
 
