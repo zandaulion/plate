@@ -985,6 +985,58 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 70%, black);
 }
 
+/* A small lock is a promise about cost, not a disabled state: people can still
+   discover the photo features before the subscription flow is wired in. The
+   shape is CSS rather than a glyph, so it stays recognisable in every locale
+   and in WebView fonts which may not contain a lock emoji. */
+.ai-locked { position: relative; }
+.ai-locked::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  pointer-events: none;
+}
+.ai-locked::before {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  pointer-events: none;
+}
+.action.ai-locked::after {
+  top: 10px;
+  right: calc(50% - 25px);
+}
+.action.ai-locked::before {
+  top: 5px;
+  right: calc(50% - 23px);
+}
+.pick-photo.ai-locked,
+.link-btn.ai-locked,
+.secondary.ai-locked {
+  padding-right: 23px;
+}
+.pick-photo.ai-locked::after,
+.link-btn.ai-locked::after,
+.secondary.ai-locked::after {
+  top: 50%;
+  right: 5px;
+  transform: translateY(-2px);
+}
+.pick-photo.ai-locked::before,
+.link-btn.ai-locked::before,
+.secondary.ai-locked::before {
+  top: 50%;
+  right: 7px;
+  transform: translateY(-8px);
+}
+
 /* ---------------------------------------------------------------- sheet */
 
 .sheet {

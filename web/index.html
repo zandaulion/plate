@@ -162,7 +162,7 @@
        The camera is the path used ten times a week and it keeps the widest
        target; this exists for a photograph you already have, and on Android
        the share sheet is the better route to it anyway. -->
-  <button id="pick-photo" class="pick-photo" type="button" data-i18n="Already have a photo?">Already have a photo?</button>
+  <button id="pick-photo" class="pick-photo ai-locked" type="button" data-i18n="Already have a photo?">Already have a photo?</button>
 
   <nav class="actions" aria-label="Add food" data-i18n-label="Add food">
     <button id="add-manual" class="action" type="button">
@@ -183,7 +183,7 @@
       <span data-i18n="Barcode">Barcode</span>
     </button>
 
-    <button id="add-btn" class="action primary-action" type="button" aria-label="Add a meal from a photo" data-i18n-label="Add a meal from a photo">
+    <button id="add-btn" class="action primary-action ai-locked" type="button" aria-label="Add a meal from a photo" data-i18n-label="Add a meal from a photo">
       <svg viewBox="0 0 24 24" aria-hidden="true" width="24" height="24">
         <path d="M12 6.5h-1.2l-.9-1.4a1 1 0 0 0-.84-.45H8a1 1 0 0 0-.84.45l-.9 1.4H4.8A1.8 1.8 0 0 0 3 8.3v8.4a1.8 1.8 0 0 0 1.8 1.8h14.4a1.8 1.8 0 0 0 1.8-1.8V8.3a1.8 1.8 0 0 0-1.8-1.8H12Z"
               fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
@@ -218,14 +218,14 @@
              portion adjustment fixes the wrong food. Only shown for photo
              estimates, since there is nothing to re-read otherwise. -->
         <section id="correct-block" class="correct" hidden>
-          <button id="correct-toggle" class="link-btn" type="button" aria-expanded="false">
+          <button id="correct-toggle" class="link-btn ai-locked" type="button" aria-expanded="false">
             Not what you're eating?
           </button>
           <div id="correct-form" hidden>
             <label class="sr-only" for="correct-text" data-i18n="What is it really?">What is it really?</label>
             <input id="correct-text" type="text" autocomplete="off"
                    placeholder="e.g. it's vegetarian, not chicken" data-i18n-placeholder="e.g. it&#x27;s vegetarian, not chicken">
-            <button id="correct-go" class="secondary" type="button" data-i18n="Read it again">Read it again</button>
+            <button id="correct-go" class="secondary ai-locked" type="button" data-i18n="Read it again">Read it again</button>
             <p class="hint" data-i18n="Your word beats the photo. It works the whole dish out afresh.">Your word beats the photo. It works the whole dish out afresh.</p>
           </div>
         </section>
@@ -248,7 +248,7 @@
             <button type="button" data-ate="0.75">&frac34;</button>
             <button type="button" data-ate="1" class="is-on" data-i18n="all">all</button>
           </div>
-          <button id="leftovers-shoot" class="link-btn" type="button" data-i18n="Ate some things and not others? Photograph what&#x27;s left">Ate some things and not others? Photograph what&#x27;s left</button>
+          <button id="leftovers-shoot" class="link-btn ai-locked" type="button" data-i18n="Ate some things and not others? Photograph what&#x27;s left">Ate some things and not others? Photograph what&#x27;s left</button>
           <p class="hint" id="ate-hint"></p>
         </section>
         <input id="file-leftovers" type="file" accept="image/*" capture="environment" hidden>

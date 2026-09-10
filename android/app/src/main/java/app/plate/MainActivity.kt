@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity() {
 
         manualAction = actionButton("Manual", R.drawable.ic_action_manual, false, "manual")
         barcodeAction = actionButton("Barcode", R.drawable.ic_action_barcode, false, "barcode")
-        photoAction = actionButton("Photo", R.drawable.ic_action_photo, true, "photo")
+        photoAction = actionButton("Photo", R.drawable.ic_action_photo_locked, true, "photo", locked = true)
         addView(manualAction, actionLayoutParams())
         addView(barcodeAction, actionLayoutParams())
         addView(photoAction, actionLayoutParams())
@@ -102,14 +102,19 @@ class MainActivity : ComponentActivity() {
         marginEnd = dp(4)
     }
 
-    private fun actionButton(label: String, icon: Int, primary: Boolean, action: String): Button = Button(this).apply {
+    private fun actionButton(label: String, icon: Int, primary: Boolean, action: String, locked: Boolean = false): Button = Button(this).apply {
         text = label
         textSize = 12f
         isAllCaps = false
         gravity = Gravity.CENTER
         setTextColor(if (primary) Color.WHITE else Color.rgb(74, 87, 76))
         compoundDrawablePadding = dp(2)
-        val image = getDrawable(icon)?.mutate()?.apply { setTint(if (primary) Color.WHITE else Color.rgb(74, 87, 76)) }
+        // The locked photo drawable carries its own two colours: the lock sits
+        // on an accent-coloured cutout over the camera. Tinting it would flatten
+        // that into an indistinct blob.
+        val image = getDrawable(icon)?.mutate()?.apply {
+            if (!locked) setTint(if (primary) Color.WHITE else Color.rgb(74, 87, 76))
+        }
         setCompoundDrawablesWithIntrinsicBounds(null, image, null, null)
         background = GradientDrawable().apply {
             setColor(if (primary) Color.rgb(46, 139, 87) else Color.WHITE)
