@@ -11,9 +11,19 @@ Google Play.
   privacy-contact placeholder before publishing it.
 - `assets/feature-graphic-base.png` — 1280 × 720 feature-graphic artwork.
 - `screenshots/` — authentic Android screenshots and their capture guide.
-- `releases/` — the destination for the signed Play App Bundle once the
-  Zandaulion upload key is available. Do not commit keystores here or anywhere
-  else in the repository.
+- `releases/` — local signed Play App Bundles ready for Play Console upload.
+  Do not commit keystores or signed bundles here or anywhere else in the
+  repository.
+
+## Current upload artifact
+
+The local `releases/bitey-private-food-log-1.0.0.aab` is the signed version
+1.0.0 (`versionCode` 1) upload bundle. It is intentionally Git-ignored; use
+the recorded hash to confirm the file before uploading it to Play Console.
+
+- File SHA-256: `25D7FA1A970F215EA02EB3CAEEF2ACA22CA1F9272F016AC4D6B217C0425FF42F`
+- Upload certificate SHA-256:
+  `4A:27:74:1E:3B:D3:A6:5F:30:C2:FA:EE:AA:06:4E:E9:67:BF:2B:79:9D:D2:B3:22:1B:6F:2B:50:22:E1:E2:BE`
 
 ## Store identity
 

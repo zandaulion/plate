@@ -17,3 +17,8 @@ android/local.properties
 android/keystore.properties
 android/app/*.jks
 android/app/*.keystore
+
+# Signed upload bundles are local release artifacts. Keep them in store/releases
+# for Play Console upload, but never publish a signed binary by accident.
+store/releases/*.aab
+store/releases/*.apks

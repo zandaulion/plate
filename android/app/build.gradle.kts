@@ -1,9 +1,35 @@
 import org.gradle.api.tasks.Sync
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("com.google.devtools.ksp")
 }
+
+/**
+ * Release credentials must remain local. They may come from the ignored
+ * android/keystore.properties file or from the process environment, which is
+ * how the existing Zandaulion keystore is used for a one-off release build.
+ */
+val localSigningProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.isFile) file.inputStream().use(::load)
+}
+
+fun signingValue(property: String, environment: String): String? =
+    System.getenv(environment)?.takeIf { it.isNotBlank() }
+        ?: localSigningProperties.getProperty(property)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingValue("storeFile", "BITEY_STORE_FILE")
+val releaseStorePassword = signingValue("storePassword", "BITEY_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "BITEY_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "BITEY_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.zandaulion.bitey"
@@ -15,6 +41,22 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+    }
+
+    if (releaseSigningReady) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
+        buildTypes {
+            getByName("release") {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 }
 
