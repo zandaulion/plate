@@ -1,7 +1,7 @@
 # Bitey — Private Food Log: Privacy Policy
 
-**Last updated:** 10 September 2026  
-**Developer:** Zandaulion  
+**Last updated:** 10 September 2026
+**Developer:** Zandaulion
 **Privacy contact:** **Replace this line with a working privacy email address
 before publishing.**
 
