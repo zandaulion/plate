@@ -1,4 +1,21 @@
-# Bitey — Google Play identity
+# Bitey — Google Play release package
+
+This folder is the single home for the materials needed to publish Bitey on
+Google Play.
+
+## Contents
+
+- `LISTINGS.md` — title, tagline, short and full descriptions, and first
+  release notes in all twelve launch languages.
+- `PRIVACY_NOTICE.md` — the public Privacy Policy text. Replace its marked
+  privacy-contact placeholder before publishing it.
+- `assets/feature-graphic-base.png` — 1280 × 720 feature-graphic artwork.
+- `screenshots/` — authentic Android screenshots and their capture guide.
+- `releases/` — the destination for the signed Play App Bundle once the
+  Zandaulion upload key is available. Do not commit keystores here or anywhere
+  else in the repository.
+
+## Store identity
 
 - Play title: **Bitey — Private Food Log**
 - Tagline: **Nutrition, privately.**
