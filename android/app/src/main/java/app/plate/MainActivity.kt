@@ -105,29 +105,43 @@ class MainActivity : ComponentActivity() {
      * This small native sibling keeps the exact three entry points stable while
      * delegating their actual behaviour back to the packaged PWA.
      */
-    private fun nativeActionBar(): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        setPadding(dp(12), dp(8), dp(12), dp(10))
+    private fun nativeActionBar(): View = FrameLayout(this).apply {
         setBackgroundColor(Color.rgb(250, 246, 239))
         elevation = dp(8).toFloat()
 
-        manualAction = actionButton("Manual", R.drawable.ic_action_manual, false, "manual")
-        barcodeAction = actionButton("Barcode", R.drawable.ic_action_barcode, false, "barcode")
-        photoAction = actionButton("Photo", R.drawable.ic_action_photo_locked, true, "photo", locked = true)
-        addView(manualAction, actionLayoutParams())
-        addView(barcodeAction, actionLayoutParams())
-        addView(photoAction, actionLayoutParams())
+        val rail = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(if (isTablet) 16 else 12), dp(8), dp(if (isTablet) 16 else 12), dp(10))
+
+            manualAction = actionButton("Manual", R.drawable.ic_action_manual, false, "manual")
+            barcodeAction = actionButton("Barcode", R.drawable.ic_action_barcode, false, "barcode")
+            photoAction = actionButton("Photo", R.drawable.ic_action_photo_locked, true, "photo", locked = true)
+            addView(manualAction, actionLayoutParams())
+            addView(barcodeAction, actionLayoutParams())
+            addView(photoAction, actionLayoutParams())
+        }
+        addView(rail, FrameLayout.LayoutParams(actionRailWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL))
     }
 
-    private fun actionLayoutParams() = LinearLayout.LayoutParams(0, dp(64), 1f).apply {
-        marginStart = dp(4)
-        marginEnd = dp(4)
+    private val isTablet: Boolean
+        get() = resources.configuration.smallestScreenWidthDp >= 600
+
+    private fun actionRailWidth(): Int {
+        if (!isTablet) return FrameLayout.LayoutParams.MATCH_PARENT
+        // A 600dp portrait tablet still needs side gutters, while a wide
+        // landscape display should not turn the three actions into a runway.
+        return dp(minOf(960, (resources.configuration.screenWidthDp - 48).coerceAtLeast(0)))
+    }
+
+    private fun actionLayoutParams() = LinearLayout.LayoutParams(0, dp(if (isTablet) 72 else 64), 1f).apply {
+        marginStart = dp(if (isTablet) 6 else 4)
+        marginEnd = dp(if (isTablet) 6 else 4)
     }
 
     private fun actionButton(label: String, icon: Int, primary: Boolean, action: String, locked: Boolean = false): Button = Button(this).apply {
         text = label
-        textSize = 12f
+        textSize = if (isTablet) 14f else 12f
         isAllCaps = false
         gravity = Gravity.CENTER
         setTextColor(if (primary) Color.WHITE else Color.rgb(74, 87, 76))
@@ -141,7 +155,7 @@ class MainActivity : ComponentActivity() {
         setCompoundDrawablesWithIntrinsicBounds(null, image, null, null)
         background = GradientDrawable().apply {
             setColor(if (primary) Color.rgb(46, 139, 87) else Color.WHITE)
-            cornerRadius = dp(16).toFloat()
+            cornerRadius = dp(if (isTablet) 18 else 16).toFloat()
             setStroke(dp(1), if (primary) Color.rgb(35, 111, 68) else Color.rgb(232, 224, 210))
         }
         minWidth = 0

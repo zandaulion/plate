@@ -188,6 +188,56 @@ input[type="range"] { padding: 0; border: 0; background: none; }
   padding: 18px 16px 132px;
   touch-action: pan-y;
 }
+
+/* Tablets deserve more than a stretched phone column. Keep the same generous
+   touch targets, let the header and sheets breathe, then turn the day into a
+   calm two-column overview only when there is genuinely room for it. */
+@media (min-width: 720px) {
+  .topbar {
+    grid-template-columns: 48px 1fr 48px 52px 52px;
+    gap: 8px;
+    padding-left: max(24px, calc((100vw - 960px) / 2));
+    padding-right: max(24px, calc((100vw - 960px) / 2));
+  }
+  .icon-btn { width: 48px; height: 50px; }
+  .profile-btn { width: 52px; height: 52px; }
+  .view { max-width: 1016px; padding: 24px 28px 128px; }
+  .bitey-card { padding: 16px 18px; gap: 16px; }
+  .bitey-avatar-btn { flex-basis: 92px; width: 92px; height: 92px; }
+  .bitey-svg-wrap { width: 84px; height: 84px; }
+  .bitey-speech { font-size: .98rem; }
+
+  .sheet { align-items: center; padding: 32px; }
+  .sheet-inner {
+    max-width: 720px;
+    max-height: min(760px, calc(100dvh - 64px));
+    border-radius: 24px;
+  }
+  .sheet .sheet-grab { display: none; }
+  .consent-card { width: min(100%, 460px); }
+  .wait-card { max-width: 420px; }
+}
+
+@media (min-width: 840px) {
+  #day-cards {
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(360px, 1.1fr);
+    gap: 14px 20px;
+    align-items: start;
+  }
+  #day-cards > .totals,
+  #day-cards > .weigh,
+  #day-cards > .quick-bite-tray,
+  #day-cards > .quick-custom-dialog { grid-column: 1; }
+  #day-cards > .quick-bite-tray { margin: 0; }
+  #day-cards > section[aria-labelledby="entries-heading"] {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+  }
+  #day-cards > section[aria-labelledby="entries-heading"] .section-head {
+    margin-top: 0;
+  }
+}
 /* -------------------------------------------------------- day cards deck */
 
 .day-cards {
