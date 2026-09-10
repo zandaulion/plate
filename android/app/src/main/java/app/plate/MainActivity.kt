@@ -10,6 +10,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 
 /**
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var manualAction: Button
     private lateinit var barcodeAction: Button
     private lateinit var photoAction: Button
+    private lateinit var backCallback: OnBackPressedCallback
+    private var backRequestInFlight = false
 
     private val barcodeScanner = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -74,6 +77,26 @@ class MainActivity : ComponentActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM,
         ))
+        backCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // evaluateJavascript returns asynchronously. Ignore a second
+                // gesture until the page has either unwound its top screen or
+                // told us that the day view is already at its root.
+                if (backRequestInFlight) return
+                backRequestInFlight = true
+                plateWebView.navigateBack { handled ->
+                    backRequestInFlight = false
+                    if (handled) return@navigateBack
+
+                    // No app screen remains. Hand this one gesture back to
+                    // Android so its normal root-screen behavior still works.
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+        onBackPressedDispatcher.addCallback(this, backCallback)
         setContentView(root)
     }
 

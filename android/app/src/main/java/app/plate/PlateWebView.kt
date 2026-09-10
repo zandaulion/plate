@@ -190,6 +190,18 @@ class PlateWebView(
         evaluateJavascript("document.getElementById(${JSONObject.quote(elementId)})?.click()", null)
     }
 
+    /**
+     * Lets the packaged interface consume a system Back gesture before Android
+     * backgrounds the task. The page owns its sheet/history stack, so native
+     * code deliberately asks it whether there is somewhere to return to rather
+     * than guessing from WebView navigation history.
+     */
+    fun navigateBack(onComplete: (Boolean) -> Unit) {
+        evaluateJavascript("window.__plateNativeBack?.() === true") { result ->
+            onComplete(result == "true")
+        }
+    }
+
     override fun onDetachedFromWindow() {
         if (genericFoodSearch.isInitialized()) genericFoodSearch.value.close()
         networkExecutor.shutdownNow()

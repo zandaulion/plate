@@ -166,6 +166,18 @@ window.addEventListener('popstate', () => {
   }
 });
 
+// The Android host owns the system Back gesture. Keep its one tiny request on
+// this side of the boundary: we know which sheet is open and can unwind the
+// history entry that opened it, while Android only needs a true/false answer.
+// Returning true for a screen already being dismissed prevents a second fast
+// Back gesture from escaping the app before its popstate has arrived.
+window.__plateNativeBack = () => {
+  const top = screens[screens.length - 1];
+  if (!top) return false;
+  if (!top.dismissing) history.back();
+  return true;
+};
+
 // ------------------------------------------------------------------ gate
 
 function showGate() {
