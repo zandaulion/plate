@@ -111,7 +111,7 @@ class LocalBackup(private val context: Context) {
                             }
                             // The PWA ZIP also carries its spreadsheet export
                             // and sometimes a note about a missing server file.
-                            "plate.csv", "README.txt" -> Unit
+                            "plate.csv", "plate-weights.csv", "README.txt" -> Unit
                             else -> {
                                 val match = BACKUP_PHOTO_PATH.matchEntire(entry.name)
                                     ?: throw IllegalArgumentException("The backup contains an unsupported file.")
