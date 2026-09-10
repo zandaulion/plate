@@ -20,7 +20,7 @@ export const EXPORT_VERSION = 1;
  * `photos` lists the filenames referenced by entries, so a consumer can tell
  * whether an accompanying archive is complete.
  */
-export function toJson({ entries = [], profile = null, accountCreatedAt = null } = {}) {
+export function toJson({ entries = [], profile = null, accountCreatedAt = null, weights = [] } = {}) {
   const rows = entries.map((e) => ({
     id: e.id,
     day: e.day,
@@ -47,7 +47,16 @@ export function toJson({ entries = [], profile = null, accountCreatedAt = null }
     profile,
     entryCount: rows.length,
     photos: rows.map((r) => r.photo).filter(Boolean),
-    entries: rows
+    entries: rows,
+    // Weigh-ins travel with the food log rather than separately: the two are
+    // read together -- what was eaten against what happened to the weight --
+    // and an export that carries only one of them answers half the question.
+    weightCount: weights.length,
+    weights: weights.map((w) => ({
+      day: w.day,
+      kg: w.kg,
+      measuredAt: w.at ?? w.measuredAt ?? w.measured_at ?? null
+    }))
   };
 }
 
@@ -79,6 +88,28 @@ const round = (n, dp) => {
   const f = 10 ** dp;
   return Math.round(v * f) / f;
 };
+
+const WEIGHT_COLUMNS = ['day', 'kg', 'measured_at'];
+
+/**
+ * The weigh-ins, as their own table.
+ *
+ * Deliberately not folded into the food CSV. That one is a row per food with
+ * the entry's columns repeated alongside, so a weight would either invent
+ * columns nothing else uses or masquerade as something eaten. Two shapes of
+ * record want two tables; anything else makes the spreadsheet lie.
+ */
+export function weightsToCsv({ weights = [] } = {}) {
+  const lines = [WEIGHT_COLUMNS.join(',')];
+  for (const w of weights) {
+    lines.push([
+      csvField(w.day),
+      round(w.kg, 2),
+      csvField(w.at ?? w.measuredAt ?? w.measured_at ?? '')
+    ].join(','));
+  }
+  return `${lines.join('\n')}\n`;
+}
 
 /** One row per food, with the entry's columns repeated alongside it. */
 export function toCsv({ entries = [] } = {}) {

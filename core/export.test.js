@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { toJson, toCsv, CSV_COLUMNS, EXPORT_VERSION } from './export.js';
+import { toJson, toCsv, weightsToCsv, CSV_COLUMNS, EXPORT_VERSION } from './export.js';
 
 const ENTRIES = [
   {
@@ -100,4 +100,56 @@ test('an empty account exports valid, empty files rather than failing', () => {
 test('an entry with no items is skipped rather than emitting a blank row', () => {
   const csv = toCsv({ entries: [{ id: 'x', day: '2026-08-22', items: [] }] });
   assert.equal(csv.trim().split('\n').length, 1);
+});
+
+test('the export carries weigh-ins, not just food', () => {
+  // Cele două se citesc împreună -- ce s-a mâncat față de ce s-a întâmplat cu
+  // greutatea -- iar un export cu doar una dintre ele răspunde la jumătate
+  // din întrebare.
+  const out = toJson({
+    entries: [],
+    weights: [
+      { day: '2026-09-01', kg: 83.4, at: '2026-09-01T07:12:00.000Z' },
+      { day: '2026-09-08', kg: 82.6, at: '2026-09-08T07:05:00.000Z' }
+    ]
+  });
+  assert.equal(out.weightCount, 2);
+  assert.deepEqual(out.weights[0], {
+    day: '2026-09-01', kg: 83.4, measuredAt: '2026-09-01T07:12:00.000Z'
+  });
+});
+
+test('an account that has never weighed in still exports cleanly', () => {
+  const out = toJson({ entries: [] });
+  assert.equal(out.weightCount, 0);
+  assert.deepEqual(out.weights, []);
+});
+
+test('weigh-ins get their own table rather than being forced into the food one', () => {
+  // Fișierul cu mâncare are un rând per aliment, cu coloanele intrării
+  // repetate alături: o greutate acolo ar inventa coloane pe care nimic
+  // altceva nu le folosește, sau s-ar da drept ceva mâncat.
+  const csv = weightsToCsv({
+    weights: [{ day: '2026-09-08', kg: 82.64, at: '2026-09-08T07:05:00.000Z' }]
+  });
+  const [header, row] = csv.trim().split('\n');
+  assert.equal(header, 'day,kg,measured_at');
+  assert.equal(row, '2026-09-08,82.64,2026-09-08T07:05:00.000Z');
+
+  const food = toCsv({ entries: [] });
+  assert.ok(!food.includes('kg'), 'tabelul cu mâncare rămâne despre mâncare');
+});
+
+test('weights accept either shape the server might hand over', () => {
+  // `at` din interogare, `measuredAt` dacă trece printr-un JSON deja formatat.
+  const a = toJson({ entries: [], weights: [{ day: '2026-09-08', kg: 80, at: 'X' }] });
+  const b = toJson({ entries: [], weights: [{ day: '2026-09-08', kg: 80, measuredAt: 'X' }] });
+  assert.equal(a.weights[0].measuredAt, 'X');
+  assert.equal(b.weights[0].measuredAt, 'X');
+});
+
+test('a weight CSV field cannot become a spreadsheet formula', () => {
+  const csv = weightsToCsv({ weights: [{ day: '=cmd|calc', kg: 80, at: '@evil' }] });
+  assert.ok(csv.includes("'=cmd|calc"), 'ziua e neutralizată');
+  assert.ok(csv.includes("'@evil"), 'marcajul de timp e neutralizat');
 });

@@ -34,7 +34,7 @@ import {
   productImagePath, hasProductImage
 } from './foods.js';
 import { summariseRecent, collapseRepeatable } from '../core/foods.js';
-import { toJson, toCsv } from '../core/export.js';
+import { toJson, toCsv, weightsToCsv } from '../core/export.js';
 import { smoothSeries, weightTrend, trendGap } from '../core/weight.js';
 import { adaptiveExpenditure } from '../core/expenditure.js';
 import { summariseUsage } from '../core/usage.js';
@@ -1169,8 +1169,16 @@ function exportPayload(accountId) {
 
   const account = db.prepare('SELECT created_at FROM accounts WHERE id = ?').get(accountId);
 
+  // Its own query rather than weightRows(): that one takes a day limit and
+  // defaults to 180, which is right for a chart and wrong for an export.
+  // Everything means everything, however long ago it was written down.
+  const weights = db.prepare(
+    'SELECT day, kg, measured_at FROM weights WHERE account_id = ? ORDER BY day'
+  ).all(accountId).map((r) => ({ day: r.day, kg: r.kg, at: r.measured_at }));
+
   return {
     entries,
+    weights,
     profile: profileFor(accountId),
     accountCreatedAt: account?.created_at ?? null
   };
@@ -1200,6 +1208,13 @@ app.get('/api/export.zip', requireDevice, (req, res) => {
     { name: 'plate.json', data: JSON.stringify(toJson(payload), null, 2) },
     { name: 'plate.csv', data: toCsv(payload) }
   ];
+
+  // Only when there is something to say. An empty table with a header row
+  // reads like a feature that failed rather than a life that has not been
+  // weighed.
+  if (payload.weights.length) {
+    files.push({ name: 'plate-weights.csv', data: weightsToCsv(payload) });
+  }
 
   let missing = 0;
   for (const entry of payload.entries) {
