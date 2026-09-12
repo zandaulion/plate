@@ -89,6 +89,11 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.13.0")
     implementation("androidx.webkit:webkit:1.17.0")
 
+    // Google Play is the only payment provider in the Android build. Product
+    // metadata always comes from Play at purchase time; it is never bundled as
+    // a price in the app.
+    implementation("com.android.billingclient:billing:9.1.0")
+
     // Bundled scanning works as soon as the app is installed. It does not
     // download a barcode model or send camera frames to a service.
     val cameraXVersion = "1.6.2"

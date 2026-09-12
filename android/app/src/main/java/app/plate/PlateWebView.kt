@@ -70,6 +70,10 @@ private class PlateNativeBridge(
     private val onBackupExportRequested: () -> Unit,
     private val onBackupImportRequested: () -> Unit,
     private val onPrimaryActionLabelsChanged: (String, String, String) -> Unit,
+    private val onAiAccessRequested: (String, String) -> Unit,
+    private val onAiOfferPurchaseRequested: (String, String) -> Unit,
+    private val onAiPurchaseRefreshRequested: () -> Unit,
+    private val onAiSubscriptionManagementRequested: () -> Unit,
 ) {
     @JavascriptInterface
     fun platform(): String = "android"
@@ -124,6 +128,34 @@ private class PlateNativeBridge(
     fun setPrimaryActionLabels(manual: String, barcode: String, photo: String) {
         onPrimaryActionLabelsChanged(manual, barcode, photo)
     }
+
+    /** A user-facing AI entry point asks native code to check Play ownership.
+     * It cannot grant itself access by merely changing WebView state. */
+    @JavascriptInterface
+    fun requestAiAccess(action: String, requestId: String) {
+        if (action !in setOf("camera", "gallery", "correction", "leftovers", "shared") ||
+            !requestId.matches(Regex("[A-Za-z0-9_-]{1,80}"))
+        ) return
+        onAiAccessRequested(action, requestId)
+    }
+
+    /** The page may select only one of Bitey's fixed base plans. Native code
+     * re-queries the associated Play offer and retains its opaque offer token. */
+    @JavascriptInterface
+    fun purchaseAiOffer(basePlanId: String, requestId: String) {
+        if (basePlanId !in setOf(
+                PlayBilling.MONTHLY_BASE_PLAN_ID,
+                PlayBilling.YEARLY_BASE_PLAN_ID,
+            ) || !requestId.matches(Regex("[A-Za-z0-9_-]{1,80}"))
+        ) return
+        onAiOfferPurchaseRequested(basePlanId, requestId)
+    }
+
+    @JavascriptInterface
+    fun refreshAiPurchase() = onAiPurchaseRefreshRequested()
+
+    @JavascriptInterface
+    fun manageAiSubscription() = onAiSubscriptionManagementRequested()
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -133,6 +165,10 @@ class PlateWebView(
     onBackupExportRequested: () -> Unit,
     onBackupImportRequested: () -> Unit,
     onPrimaryActionLabelsChanged: (String, String, String) -> Unit,
+    onAiAccessRequested: (String, String) -> Unit,
+    onAiOfferPurchaseRequested: (String, String) -> Unit,
+    onAiPurchaseRefreshRequested: () -> Unit,
+    onAiSubscriptionManagementRequested: () -> Unit,
 ) : WebView(context) {
     private val networkExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val barcodeFoods by lazy { PlateDatabase.get(context).barcodeFoods() }
@@ -165,6 +201,10 @@ class PlateWebView(
                 onBackupExportRequested,
                 onBackupImportRequested,
                 onPrimaryActionLabelsChanged,
+                onAiAccessRequested,
+                onAiOfferPurchaseRequested,
+                onAiPurchaseRefreshRequested,
+                onAiSubscriptionManagementRequested,
             ),
             "PlateNative",
         )
@@ -181,13 +221,38 @@ class PlateWebView(
     /** The native action bar may invoke only these established PWA controls;
      * callers never get an arbitrary JavaScript execution surface. */
     fun performPrimaryAction(action: String) {
+        if (action == "photo") {
+            requestAiAction("camera")
+            return
+        }
         val elementId = when (action) {
             "manual" -> "add-manual"
             "barcode" -> "add-barcode"
-            "photo" -> "add-btn"
             else -> return
         }
         evaluateJavascript("document.getElementById(${JSONObject.quote(elementId)})?.click()", null)
+    }
+
+    /** The native rail must pass through the same entitlement gate as every
+     * in-page photo route. */
+    private fun requestAiAction(action: String) {
+        evaluateJavascript("window.__plateNativeAiAction?.(${JSONObject.quote(action)})", null)
+    }
+
+    /** [payload] is a compact native-owned JSON response. It can contain plan
+     * labels and prices, but never a Play offer token or purchase token. */
+    fun deliverAiAccessResult(requestId: String, payload: String) {
+        evaluateJavascript(
+            "window.__plateNativeAiAccessResult?.(${JSONObject.quote(requestId)}, ${JSONObject.quote(payload)})",
+            null,
+        )
+    }
+
+    fun deliverAiPurchaseRefreshResult(status: String) {
+        evaluateJavascript(
+            "window.__plateNativeAiRestoreResult?.(${JSONObject.quote(status)})",
+            null,
+        )
     }
 
     /**

@@ -411,7 +411,7 @@
 
       <div id="profile-body">
       <form id="profile-form" class="stack">
-        <p class="hint" data-i18n="Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays on this server and is never sent anywhere else.">Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays on this server and is never sent anywhere else.</p>
+        <p class="hint" data-i18n="Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays only on this device and is never sent anywhere else.">Things that rarely change. Used only to estimate what you burn on an average day; your weight comes from your weigh-ins below. It stays only on this device and is never sent anywhere else.</p>
 
         <!-- Weight is not here. It is logged daily below and on the day view,
              and having a second copy in this form meant two numbers for the
@@ -545,6 +545,18 @@
           </label>
         </section>
 
+        <!-- The entitlement itself belongs to the user's Google Play account,
+             never to the diary. This stays Android-only: the hosted PWA has no
+             Play Billing client. -->
+        <section id="native-ai-purchases" class="native-privacy" hidden>
+          <h3 class="section-head" data-i18n="Bitey AI">Bitey AI</h3>
+          <p class="hint" data-i18n="Bitey AI is a paid feature. Purchases are managed by Google Play.">Bitey AI is a paid feature. Purchases are managed by Google Play.</p>
+          <div class="export-row">
+            <button id="ai-restore" class="secondary" type="button" data-i18n="Restore Bitey AI purchase">Restore Bitey AI purchase</button>
+            <button id="ai-manage" class="secondary" type="button" data-i18n="Manage Bitey AI subscription">Manage Bitey AI subscription</button>
+          </div>
+        </section>
+
         <div id="server-recovery-controls">
           <h3 class="section-head" data-i18n="Recovery">Recovery</h3>
           <p class="hint" id="recovery-state"></p>
@@ -559,6 +571,23 @@
     </div>
   </div>
 
+</div>
+
+<!-- Android subscription choices arrive from Google Play with a localised
+     price. The page only learns the base-plan ID; it never receives an offer
+     token or purchase token. -->
+<div id="ai-plan-picker" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="ai-plan-heading">
+  <div class="sheet-inner">
+    <header class="sheet-head">
+      <h2 id="ai-plan-heading" data-i18n="Choose your Bitey AI plan">Choose your Bitey AI plan</h2>
+      <button id="ai-plan-close" class="icon-btn" aria-label="Close" data-i18n-label="Close">&times;</button>
+    </header>
+    <div id="ai-plan-body">
+      <p class="hint" data-i18n="Choose monthly or yearly billing. You can cancel any time in Google Play.">Choose monthly or yearly billing. You can cancel any time in Google Play.</p>
+      <div id="ai-plan-options" class="export-row"></div>
+      <button id="ai-plan-cancel" class="secondary" type="button" data-i18n="Not now">Not now</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

@@ -22,3 +22,8 @@ android/app/*.keystore
 # for Play Console upload, but never publish a signed binary by accident.
 store/releases/*.aab
 store/releases/*.apks
+
+# Locally copied APKs can contain release artefacts and are not source or
+# Play listing material. Keep them on the machine, outside the public repo.
+APKs/
+*.apk

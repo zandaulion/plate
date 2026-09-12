@@ -2084,12 +2084,145 @@ async function prepareImage(file) {
   return { base64, mimeType: 'image/jpeg', objectUrl: URL.createObjectURL(blob) };
 }
 
-$('add-btn').addEventListener('click', () => $('file-input').click());
+// ---------------------------------------------------------------- Bitey AI
+//
+// AI actions remain ordinary PWA actions in the browser. In the installed
+// Android app, though, each route has to cross the native Play entitlement
+// boundary first. This is a UI gate only: the future Firebase/Gemini endpoint
+// must enforce the same entitlement before it accepts an image.
+const nativeAiWaiters = new Map();
+let nativeAiSequence = 0;
+let aiPlanRequestId = null;
+
+function settleNativeAiRequest(requestId, status) {
+  const resolve = nativeAiWaiters.get(requestId);
+  if (!resolve) return;
+  nativeAiWaiters.delete(requestId);
+  resolve(status);
+}
+
+function closeAiPlanPicker() {
+  if (screenIsOpen('ai-plan')) dismissScreen('ai-plan');
+}
+
+function showAiPlanPicker(requestId, offers) {
+  const eligible = Array.isArray(offers)
+    ? offers.filter((offer) =>
+      ['monthly', 'yearly'].includes(offer?.id) && typeof offer.price === 'string' && offer.price)
+    : [];
+  if (!eligible.length) {
+    settleNativeAiRequest(requestId, 'unavailable');
+    return;
+  }
+
+  // Only one entitlement check can own the picker. This also prevents an old
+  // asynchronous result from turning a later request into the wrong purchase.
+  if (aiPlanRequestId && aiPlanRequestId !== requestId) {
+    settleNativeAiRequest(requestId, 'error');
+    return;
+  }
+  aiPlanRequestId = requestId;
+
+  const options = $('ai-plan-options');
+  options.replaceChildren();
+  for (const offer of eligible) {
+    const button = document.createElement('button');
+    const name = offer.id === 'yearly' ? t('Yearly') : t('Monthly');
+    button.type = 'button';
+    button.className = 'secondary ai-plan-option';
+    button.setAttribute('aria-label', `${name}: ${offer.price}`);
+    const label = document.createElement('span');
+    label.textContent = name;
+    const price = document.createElement('strong');
+    price.textContent = offer.price;
+    button.append(label, price);
+    button.addEventListener('click', () => {
+      if (aiPlanRequestId !== requestId) return;
+      if (typeof window.PlateNative?.purchaseAiOffer !== 'function') {
+        aiPlanRequestId = null;
+        closeAiPlanPicker();
+        settleNativeAiRequest(requestId, 'unavailable');
+        return;
+      }
+      options.querySelectorAll('button').forEach((choice) => { choice.disabled = true; });
+      window.PlateNative.purchaseAiOffer(offer.id, requestId);
+    });
+    options.append(button);
+  }
+
+  const close = screen('ai-plan');
+  $('ai-plan-picker').hidden = false;
+  openScreen('ai-plan', () => {
+    close();
+    $('ai-plan-picker').hidden = true;
+    if (aiPlanRequestId === requestId) {
+      aiPlanRequestId = null;
+      settleNativeAiRequest(requestId, 'cancelled');
+    }
+  });
+}
+
+window.__plateNativeAiAccessResult = (requestId, payload) => {
+  if (!nativeAiWaiters.has(requestId)) return;
+  let response;
+  try { response = JSON.parse(payload); } catch { response = { status: payload }; }
+  if (response?.status === 'offers') {
+    showAiPlanPicker(requestId, response.offers);
+    return;
+  }
+  if (aiPlanRequestId === requestId) {
+    aiPlanRequestId = null;
+    closeAiPlanPicker();
+  }
+  settleNativeAiRequest(requestId, response?.status || 'error');
+};
+
+async function requestAiAccess(action) {
+  if (!window.__PLATE_NATIVE__) return true;
+  if (typeof window.PlateNative?.requestAiAccess !== 'function') {
+    toast(t('Bitey AI is not available to buy yet.'));
+    return false;
+  }
+  const requestId = `ai-${++nativeAiSequence}`;
+  const status = await new Promise((resolve) => {
+    nativeAiWaiters.set(requestId, resolve);
+    window.PlateNative.requestAiAccess(action, requestId);
+  });
+  if (status === 'active') return true;
+  if (status === 'pending') toast(t('Your Bitey AI purchase is still pending.'));
+  else if (status === 'cancelled') toast(t('Your Bitey AI purchase was cancelled.'));
+  else if (status === 'unavailable') toast(t('Bitey AI is not available to buy yet.'));
+  else toast(t('Could not connect to Google Play. Try again.'));
+  return false;
+}
+
+$('ai-plan-close').addEventListener('click', closeAiPlanPicker);
+$('ai-plan-cancel').addEventListener('click', closeAiPlanPicker);
+$('ai-plan-picker').addEventListener('click', (ev) => {
+  if (ev.target === $('ai-plan-picker')) closeAiPlanPicker();
+});
+
+function continueAiAction(action) {
+  if (action === 'camera') return $('file-input').click();
+  if (action === 'gallery') return $('gallery-input').click();
+  if (action === 'correction') return submitCorrection();
+  if (action === 'leftovers') return $('file-leftovers').click();
+}
+
+async function beginAiAction(action) {
+  if (await requestAiAccess(action)) continueAiAction(action);
+}
+
+// The stable native action rail calls this rather than clicking the page's
+// photo button, which prevents a browser-only bypass around the purchase gate.
+window.__plateNativeAiAction = (action) => { void beginAiAction(action); };
+
+$('add-btn').addEventListener('click', () => { void beginAiAction('camera'); });
 
 // The gallery, kept off the camera's path. #file-input carries
 // capture="environment", which is what makes the camera one tap rather than a
 // chooser; this is a second input without it, so neither route taxes the other.
-$('pick-photo')?.addEventListener('click', () => $('gallery-input').click());
+$('pick-photo')?.addEventListener('click', () => { void beginAiAction('gallery'); });
 $('gallery-input')?.addEventListener('change', (ev) => {
   const file = ev.target.files?.[0];
   ev.target.value = '';
@@ -2654,7 +2787,7 @@ $('ate-row')?.addEventListener('click', (ev) => {
  * that looks wrong is abandoned by closing the sheet, exactly like a re-read
  * of the original photo.
  */
-$('leftovers-shoot')?.addEventListener('click', () => $('file-leftovers').click());
+$('leftovers-shoot')?.addEventListener('click', () => { void beginAiAction('leftovers'); });
 
 $('file-leftovers')?.addEventListener('change', async (ev) => {
   const file = ev.target.files?.[0];
@@ -3000,7 +3133,7 @@ $('correct-toggle').addEventListener('click', () => {
  * more model call and no second picture. The correction is kept on the
  * estimate's note so the entry records why its numbers changed.
  */
-$('correct-go').addEventListener('click', async () => {
+async function submitCorrection() {
   const correction = $('correct-text').value.trim();
   if (!correction) return toast(t('Say what it is first.'));
 
@@ -3050,7 +3183,9 @@ $('correct-go').addEventListener('click', async () => {
   } finally {
     $('correct-go').disabled = false;
   }
-});
+}
+
+$('correct-go').addEventListener('click', () => { void beginAiAction('correction'); });
 
 $('manual-toggle').addEventListener('click', () => {
   const form = $('manual-form');
@@ -3715,6 +3850,16 @@ if (window.__PLATE_NATIVE__) {
   $('server-export-actions').hidden = true;
   $('native-backup-actions').hidden = false;
   $('native-barcode-privacy').hidden = false;
+  $('native-ai-purchases').hidden = false;
+
+  window.__plateNativeAiRestoreResult = (status) => {
+    if (status === 'active') toast(t('Bitey AI is active on this device.'));
+    else if (status === 'pending') toast(t('Your Bitey AI purchase is still pending.'));
+    else if (status === 'inactive') toast(t('No Bitey AI purchase was found for this Google Play account.'));
+    else toast(t('Could not connect to Google Play. Try again.'));
+  };
+  $('ai-restore').addEventListener('click', () => window.PlateNative?.refreshAiPurchase?.());
+  $('ai-manage').addEventListener('click', () => window.PlateNative?.manageAiSubscription?.());
 
   const alwaysAllowToggle = $('off-always-allow');
   syncAlwaysAllowOpenFoodFactsToggle();
@@ -4269,8 +4414,14 @@ async function collectSharedPhoto() {
   try {
     const cache = await caches.open('plate-shared-photo');
     const res = await cache.match('/__shared-photo');
-    await cache.delete('/__shared-photo');
     if (!res) return;
+
+    // A shared image must not silently skip the same paid route as the camera
+    // and gallery. It is deleted either way so somebody else's image is not
+    // left in Cache Storage after the share attempt finishes.
+    const allowed = await requestAiAccess('shared');
+    await cache.delete('/__shared-photo');
+    if (!allowed) return;
 
     const blob = await res.blob();
     if (!blob.size) return;

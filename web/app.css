@@ -1124,6 +1124,14 @@ input[type="range"] { padding: 0; border: 0; background: none; }
    that container itself, which collapsed it to nothing once the devices
    section became its sibling and clipped away the Save button. */
 #review-body, #profile-body, #settings-body { overflow-y: auto; flex: 1; }
+#ai-plan-body {
+  display: flex; flex: 1; flex-direction: column; gap: 12px;
+  overflow-y: auto; padding: 16px; overscroll-behavior: contain;
+}
+#ai-plan-body .hint { margin: 0; }
+#ai-plan-options { margin-top: 0; }
+.ai-plan-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; }
+.ai-plan-option strong { color: var(--green); font-size: 1rem; white-space: nowrap; }
 #review-body { padding: 16px; }
 #profile-form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .sheet-foot {

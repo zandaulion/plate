@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
  */
 class MainActivity : ComponentActivity() {
     private lateinit var plateWebView: PlateWebView
+    private lateinit var playBilling: PlayBilling
     private lateinit var manualAction: Button
     private lateinit var barcodeAction: Button
     private lateinit var photoAction: Button
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        playBilling = PlayBilling(applicationContext)
         plateWebView = PlateWebView(
             context = this,
             onBarcodeScanRequested = {
@@ -65,6 +67,32 @@ class MainActivity : ComponentActivity() {
             onPrimaryActionLabelsChanged = { manual, barcode, photo ->
                 // JavaScript-interface calls are not made on the UI thread.
                 runOnUiThread { updatePrimaryActionLabels(manual, barcode, photo) }
+            },
+            onAiAccessRequested = { _, requestId ->
+                // The page asks for a narrow entitlement result. It never sees
+                // a Play purchase token, account identity, or billing details.
+                runOnUiThread {
+                    playBilling.requestAiAccess { response ->
+                        plateWebView.deliverAiAccessResult(requestId, response.toJson())
+                    }
+                }
+            },
+            onAiOfferPurchaseRequested = { basePlanId, requestId ->
+                runOnUiThread {
+                    playBilling.buyAiOffer(this, basePlanId) { response ->
+                        plateWebView.deliverAiAccessResult(requestId, response.toJson())
+                    }
+                }
+            },
+            onAiPurchaseRefreshRequested = {
+                runOnUiThread {
+                    playBilling.refresh { status ->
+                        plateWebView.deliverAiPurchaseRefreshResult(status.wireValue)
+                    }
+                }
+            },
+            onAiSubscriptionManagementRequested = {
+                runOnUiThread { playBilling.manageSubscription(this) }
             },
         )
         val root = FrameLayout(this)
@@ -98,6 +126,22 @@ class MainActivity : ComponentActivity() {
         }
         onBackPressedDispatcher.addCallback(this, backCallback)
         setContentView(root)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        playBilling.start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // A pending payment may have completed while the activity was away.
+        playBilling.refresh()
+    }
+
+    override fun onDestroy() {
+        if (::playBilling.isInitialized) playBilling.close()
+        super.onDestroy()
     }
 
     /**
