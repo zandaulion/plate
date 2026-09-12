@@ -12,6 +12,8 @@ Google Play.
 - `MANUAL_RELEASE_GUIDE.md` — the manual Play Console, privacy, billing, and
   later Firebase/Gemini steps, in the order to perform them.
 - `assets/feature-graphic-base.png` — 1280 × 720 feature-graphic artwork.
+- `assets/feature-graphic-play.png` — flattened 1024 × 500 feature graphic
+  ready for Google Play upload.
 - `screenshots/` — authentic Android screenshots and their capture guide.
 - `releases/` — local signed Play App Bundles ready for Play Console upload.
   Do not commit keystores or signed bundles here or anywhere else in the

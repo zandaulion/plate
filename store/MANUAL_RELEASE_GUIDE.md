@@ -77,9 +77,9 @@ Use `LISTINGS.md` as the source of truth.
   `screenshots/04-private-backup.png`
 - **Tablet screenshots:** the five `tablet-7-*` and five `tablet-10-*` images
 
-Use `assets/feature-graphic-v2.png` as the visual source, but export or flatten
-it before upload: Play requires a **1024 × 500 JPEG or 24-bit PNG without an
-alpha channel**. The saved file has the correct dimensions but is a 32-bit PNG.
+Use `assets/feature-graphic-play.png` for upload: it is a flattened **1024 ×
+500 24-bit PNG** with no alpha channel. Keep `feature-graphic-v2.png` as the
+editable visual source.
 
 The current screenshots contain English UI text. Use them for the English
 listing. Before attaching screenshots to a translated listing, capture that
