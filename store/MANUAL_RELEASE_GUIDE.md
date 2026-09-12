@@ -170,17 +170,24 @@ converted local prices in the store listing or in app text.
 
 ## 6. Make and test the billing release
 
-When the two Play plans exist, ask Codex to prepare the next signed bundle. The
-required release changes are:
+The source is already version **1.0.1** with `versionCode` **2**. Before asking
+Codex to build the next signed bundle, restore signing locally on the laptop:
 
-1. Change the app to version **1.0.1** and `versionCode` **2**.
-2. Build a signed AAB using the existing local upload keystore. Do not copy the
-   keystore or the signed bundle into GitHub.
-3. Upload that AAB to the closed test track, create a release, and wait for it
+1. Copy `android/keystore.properties.example` to the ignored local file
+   `android/keystore.properties`.
+2. Keep `storeFile=../../globe-release.jks`, then replace the three
+   `REPLACE_*` values with the local keystore password, alias, and key
+   password. Do this in the file itself; never paste those values into chat or
+   GitHub.
+3. Tell Codex the local file is complete. The release build will use it, verify
+   the signed AAB, and copy the upload-ready file to `C:\Users\danie\APKs`.
+   The build now refuses to finish if signing is absent, so an unsigned bundle
+   cannot be confused with an upload-ready one.
+4. Upload that AAB to the closed test track, create a release, and wait for it
    to become available.
-4. In Play Console, add only test-account email addresses under **License
+5. In Play Console, add only test-account email addresses under **License
    testing**. Keep that list in Play Console, not in this repository.
-5. On a real device, install from the Play opt-in link while signed in with a
+6. On a real device, install from the Play opt-in link while signed in with a
    licence-test account. Do not use a random sideloaded production APK as the
    only billing test.
 
