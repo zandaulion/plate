@@ -39,8 +39,8 @@ android {
         applicationId = "com.zandaulion.bitey"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     if (releaseSigningReady) {
@@ -83,6 +83,20 @@ android.sourceSets.named("main") {
 
 tasks.named("preBuild") {
     dependsOn(syncPlateAssets)
+}
+
+// Never leave an unsigned upload bundle in the build directory where it could
+// be mistaken for a Play-ready release. The values live only in the ignored
+// keystore.properties file (or the local process environment).
+tasks.configureEach {
+    if (name == "preReleaseBuild") {
+        doFirst {
+            check(releaseSigningReady) {
+                "Release signing is not configured. Add the local ignored " +
+                    "android/keystore.properties file or BITEY_* environment values."
+            }
+        }
+    }
 }
 
 dependencies {

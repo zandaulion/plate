@@ -51,6 +51,14 @@ for sale in Play Console:
 The billing bridge does not expose Play account details or purchase tokens to
 the WebView, and it does not send diary data or photos to Google Play.
 
+## Local release signing
+
+Before `bundleRelease`, copy `keystore.properties.example` to the ignored
+`keystore.properties` file and replace the three `REPLACE_*` values using the
+local upload-keystore credentials. The `storeFile` example already points at
+the local `globe-release.jks` after the project move. Release builds now fail
+instead of creating an unsigned AAB when those private inputs are absent.
+
 The interface assets are synchronised automatically by the Gradle
 `syncPlateAssets` task, so UI tuning in `web/` remains the source of truth.
 
