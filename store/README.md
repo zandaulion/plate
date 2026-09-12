@@ -9,6 +9,8 @@ Google Play.
   release notes in all twelve launch languages.
 - `PRIVACY_NOTICE.md` — the public Privacy Policy text. Replace its marked
   privacy-contact placeholder before publishing it.
+- `MANUAL_RELEASE_GUIDE.md` — the manual Play Console, privacy, billing, and
+  later Firebase/Gemini steps, in the order to perform them.
 - `assets/feature-graphic-base.png` — 1280 × 720 feature-graphic artwork.
 - `screenshots/` — authentic Android screenshots and their capture guide.
 - `releases/` — local signed Play App Bundles ready for Play Console upload.

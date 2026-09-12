@@ -27,3 +27,11 @@ store/releases/*.apks
 # Play listing material. Keep them on the machine, outside the public repo.
 APKs/
 *.apk
+
+# Future Firebase project material belongs in the deployment environment, not
+# in the public source repository. (The Android config itself is not a secret,
+# but is kept local under Bitey's no-personal-project-details rule.)
+android/app/google-services.json
+firebase-service-account*.json
+service-account*.json
+functions/.env*
